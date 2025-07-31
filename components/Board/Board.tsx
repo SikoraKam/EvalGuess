@@ -10,6 +10,7 @@ export const Board: FC<BoardProps> = ({ fen }) => {
   const chess = useMemo(() => {
     return new Chess(fen);
   }, [fen]);
+
   const board = useMemo(() => {
     return chess.board();
   }, [chess]);
@@ -38,23 +39,28 @@ export const Board: FC<BoardProps> = ({ fen }) => {
   );
 
   return (
-    <View style={styles.boardContainer}>
-      {board.map((row, rowIndex) =>
-        row.map((square, columnIndex) => {
-          const isSquareWhite = (rowIndex + columnIndex) % 2 === 0;
-
-          return !square
-            ? renderEmptySquare(isSquareWhite)
-            : renderSquareWithPiece(square, isSquareWhite);
-        }),
-      )}
+    <View>
+      {board.map((row, rowIndex) => (
+        <View style={styles.rowContainer} key={rowIndex}>
+          {row.map((square, columnIndex) => {
+            const isSquareWhite = (rowIndex + columnIndex) % 2 === 0;
+            return (
+              <View key={columnIndex}>
+                {!square
+                  ? renderEmptySquare(isSquareWhite)
+                  : renderSquareWithPiece(square, isSquareWhite)}
+              </View>
+            );
+          })}
+        </View>
+      ))}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  boardContainer: {
-    flex: 1,
+  rowContainer: {
+    flexDirection: 'row',
   },
   square: {
     width: width / 8,
