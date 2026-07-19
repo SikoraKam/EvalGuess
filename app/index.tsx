@@ -3,13 +3,11 @@ import { StandardButton } from '@/components/common';
 import { EvaluationResultModal } from '@/components/EvaluationResultModal';
 import { CategoryLabels } from '@/const/categories';
 import { positionsExample } from '@/positions/positionExample';
-import {
-  getCategoryDifference,
-  getPointsBasedOnCategoryDifference,
-} from '@/utils/categories';
+import { getCategoryDifference } from '@/utils/categories';
 import { getEngineCategory } from '@/utils/evaluation';
 import { createGameSession, getNextGameSession } from '@/utils/gameSession';
 import { loadGameSession, saveGameSession } from '@/utils/gameStorage';
+import { calculateRatingChange } from '@/utils/rating';
 import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
@@ -34,13 +32,7 @@ export default function Index() {
     userEvalCategory,
     engineCategory,
   );
-  const points = getPointsBasedOnCategoryDifference(categoryDifference);
-  const feedbackKind =
-    categoryDifference === 0
-      ? 'exact'
-      : categoryDifference === 1
-        ? 'close'
-        : 'incorrect';
+  const ratingChange = calculateRatingChange(categoryDifference);
 
   useEffect(() => {
     let isMounted = true;
@@ -79,7 +71,12 @@ export default function Index() {
 
   const goToNextPosition = () => {
     setSession((currentSession) =>
-      getNextGameSession(currentSession, positionsExample.length, points),
+      getNextGameSession(
+        currentSession,
+        positionsExample.length,
+        ratingChange,
+        categoryDifference === 0,
+      ),
     );
     setSelectedValueOnSlider(0);
     setIsResultModalVisible(false);
@@ -104,8 +101,8 @@ export default function Index() {
       <Board fen={position.fen} />
 
       <Text style={{ marginTop: 20 }}>
-        Points: {session.totalPoints} · Positions: {session.completedPositions}{' '}
-        · Exact guesses: {session.correctGuesses}
+        Rating: {session.rating} · Positions: {session.completedPositions} ·
+        Exact guesses: {session.correctGuesses}
       </Text>
 
       <View style={{ marginTop: 40 }}>
@@ -130,13 +127,14 @@ export default function Index() {
         engineCategory={engineCategory}
         engineEvaluation={engineEvaluation}
         onNext={goToNextPosition}
+        ratingChange={ratingChange}
         userEvalCategory={userEvalCategory}
         visible={isResultModalVisible}
       />
 
       <ResultCue
-        kind={feedbackKind}
         onComplete={showResultModal}
+        ratingChange={ratingChange}
         visible={isResultCueVisible}
       />
     </View>

@@ -6,9 +6,9 @@ describe('game session', () => {
     let session = createGameSession(3, random);
     const shownIndexes = [session.currentPositionIndex];
 
-    session = getNextGameSession(session, 3, 7, random);
+    session = getNextGameSession(session, 3, 7, false, random);
     shownIndexes.push(session.currentPositionIndex);
-    session = getNextGameSession(session, 3, 7, random);
+    session = getNextGameSession(session, 3, 7, false, random);
     shownIndexes.push(session.currentPositionIndex);
 
     expect(new Set(shownIndexes)).toEqual(new Set([0, 1, 2]));
@@ -17,12 +17,12 @@ describe('game session', () => {
 
   it('updates accumulated statistics when moving to the next position', () => {
     const session = createGameSession(2, () => 0);
-    const nextSession = getNextGameSession(session, 2, 10, () => 0);
+    const nextSession = getNextGameSession(session, 2, 12, true, () => 0);
 
     expect(nextSession).toMatchObject({
       completedPositions: 1,
       correctGuesses: 1,
-      totalPoints: 10,
+      rating: 12,
     });
   });
 });

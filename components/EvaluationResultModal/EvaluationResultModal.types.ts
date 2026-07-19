@@ -7,4 +7,5 @@ export interface EvaluationResultModalProps {
   engineCategory: number;
   engineEvaluation: EngineEvaluation | undefined;
   userEvalCategory: CategoryLabels;
+  ratingChange: number;
 }

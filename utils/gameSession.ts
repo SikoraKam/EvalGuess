@@ -2,8 +2,8 @@ export interface GameSession {
   completedPositions: number;
   correctGuesses: number;
   currentPositionIndex: number;
+  rating: number;
   remainingPositionIndexes: number[];
-  totalPoints: number;
 }
 
 type Random = () => number;
@@ -23,20 +23,21 @@ export function createGameSession(
     correctGuesses: 0,
     currentPositionIndex: shuffledIndexes[0],
     remainingPositionIndexes: shuffledIndexes.slice(1),
-    totalPoints: 0,
+    rating: 0,
   };
 }
 
 export function getNextGameSession(
   session: GameSession,
   positionCount: number,
-  points: number,
+  ratingChange: number,
+  isExactGuess: boolean,
   random: Random = Math.random,
 ): GameSession {
   const updatedStats = {
     completedPositions: session.completedPositions + 1,
-    correctGuesses: session.correctGuesses + (points === 10 ? 1 : 0),
-    totalPoints: session.totalPoints + points,
+    correctGuesses: session.correctGuesses + (isExactGuess ? 1 : 0),
+    rating: session.rating + ratingChange,
   };
 
   if (session.remainingPositionIndexes.length > 0) {

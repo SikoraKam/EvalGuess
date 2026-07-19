@@ -1,9 +1,7 @@
 import { CategoryLabels } from '../../const/categories';
-import {
-  getCategoryDifference,
-  getPointsBasedOnCategoryDifference,
-} from '../categories';
+import { getCategoryDifference } from '../categories';
 import { formatEngineEvaluation, getEngineCategory } from '../evaluation';
+import { calculateRatingChange, formatRatingChange } from '../rating';
 
 describe('getEngineCategory', () => {
   it.each([
@@ -33,17 +31,24 @@ describe('formatEngineEvaluation', () => {
   });
 });
 
-describe('scoring', () => {
+describe('rating', () => {
   it.each([
-    [0, 10],
+    [0, 12],
     [1, 7],
-    [2, 5],
-    [3, 3],
-    [4, 1],
-    [5, 0],
-    [10, 0],
-  ])('awards %i-category difference %i points', (difference, points) => {
-    expect(getPointsBasedOnCategoryDifference(difference)).toBe(points);
+    [2, 2],
+    [3, -2],
+    [5, -12],
+    [10, -36],
+  ])(
+    'changes rating by %i for a %i-category difference',
+    (difference, change) => {
+      expect(calculateRatingChange(difference)).toBe(change);
+    },
+  );
+
+  it('formats positive rating changes with a plus sign', () => {
+    expect(formatRatingChange(12)).toBe('+12');
+    expect(formatRatingChange(-4)).toBe('-4');
   });
 
   it('calculates the category difference from a player guess', () => {

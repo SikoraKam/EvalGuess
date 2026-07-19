@@ -11,16 +11,16 @@ import { EvaluationResultModalProps } from './EvaluationResultModal.types';
 import { StandardButton } from '../common';
 import {
   getCategoryLabelBasedOnValue,
-  getCategoryDifference,
-  getPointsBasedOnCategoryDifference,
   getRangeFromCategoryLabel,
 } from '@/utils/categories';
 import { formatEngineEvaluation } from '@/utils/evaluation';
+import { calculateRatingChange, formatRatingChange } from '@/utils/rating';
 
 export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
   engineCategory,
   engineEvaluation,
   onNext,
+  ratingChange,
   userEvalCategory,
   visible,
 }) => {
@@ -77,11 +77,18 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
           </Text>
 
           <Text style={styles.item}>
-            Points Earned:{' '}
-            <Text style={styles.value}>
-              {getPointsBasedOnCategoryDifference(
-                getCategoryDifference(userEvalCategory, engineCategory),
-              )}
+            Rating change:{' '}
+            <Text
+              style={[
+                styles.value,
+                ratingChange > 0
+                  ? styles.positiveRating
+                  : ratingChange < 0
+                    ? styles.negativeRating
+                    : undefined,
+              ]}
+            >
+              {formatRatingChange(ratingChange)}
             </Text>
           </Text>
 
@@ -106,24 +113,21 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
               detailsVisible && styles.details,
             ]}
           >
-            <Text style={styles.detailsText}>Scoring Rules:</Text>
+            <Text style={styles.detailsText}>Rating rules:</Text>
             <Text style={styles.detailsText}>
-              Exact category match: 10 points
+              Exact category: {formatRatingChange(calculateRatingChange(0))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 1 category: 7 points
+              Difference of 1: {formatRatingChange(calculateRatingChange(1))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 2 categories: 5 points
+              Difference of 2: {formatRatingChange(calculateRatingChange(2))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 3 categories: 3 points
+              Difference of 3: {formatRatingChange(calculateRatingChange(3))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 4 categories: 1 points
-            </Text>
-            <Text style={styles.detailsText}>
-              Difference of 5 or more categories: 0 points
+              Each further category lowers rating further.
             </Text>
           </Animated.View>
 
@@ -165,6 +169,12 @@ const styles = StyleSheet.create({
   },
   value: {
     fontWeight: '600',
+  },
+  positiveRating: {
+    color: '#2e7d32',
+  },
+  negativeRating: {
+    color: '#c62828',
   },
   textButton: {
     padding: 4,

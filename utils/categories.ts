@@ -40,25 +40,6 @@ export const getCategoryRange = (val: number): string => {
   }
 };
 
-export const getPointsBasedOnCategoryDifference = (
-  difference: number,
-): number => {
-  switch (difference) {
-    case 0:
-      return 10; // No difference
-    case 1:
-      return 7;
-    case 2:
-      return 5;
-    case 3:
-      return 3;
-    case 4:
-      return 1;
-    default:
-      return 0; // For differences of 5 or more categories
-  }
-};
-
 export const getCategoryDifference = (
   userEval: CategoryLabels,
   engineEval: number,

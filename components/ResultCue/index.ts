@@ -1,2 +1,2 @@
 export { ResultCue } from './ResultCue';
-export type { ResultCueKind, ResultCueProps } from './ResultCue.types';
+export type { ResultCueProps } from './ResultCue.types';

@@ -15,7 +15,7 @@ export async function loadGameSession(
   try {
     const session = JSON.parse(serializedSession) as unknown;
 
-    return isValidGameSession(session, positionCount) ? session : null;
+    return getValidGameSession(session, positionCount);
   } catch {
     await AsyncStorage.removeItem(GAME_SESSION_KEY);
     return null;
@@ -26,35 +26,47 @@ export function saveGameSession(session: GameSession) {
   return AsyncStorage.setItem(GAME_SESSION_KEY, JSON.stringify(session));
 }
 
-function isValidGameSession(
+function getValidGameSession(
   value: unknown,
   positionCount: number,
-): value is GameSession {
+): GameSession | null {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
 
   const session = value as GameSession;
 
   if (!Array.isArray(session.remainingPositionIndexes)) {
-    return false;
+    return null;
   }
 
-  const statValues = [
-    session.completedPositions,
-    session.correctGuesses,
-    session.totalPoints,
-  ];
+  const rating = getRating(session);
+
+  if (rating === null) {
+    return null;
+  }
+
+  const counterValues = [session.completedPositions, session.correctGuesses];
   const indexes = [
     session.currentPositionIndex,
     ...session.remainingPositionIndexes,
   ];
 
-  return (
-    statValues.every((stat) => Number.isInteger(stat) && stat >= 0) &&
+  const isValid =
+    counterValues.every((stat) => Number.isInteger(stat) && stat >= 0) &&
+    Number.isInteger(rating) &&
     indexes.every(
       (index) => Number.isInteger(index) && index >= 0 && index < positionCount,
     ) &&
-    new Set(indexes).size === indexes.length
-  );
+    new Set(indexes).size === indexes.length;
+
+  return isValid ? { ...session, rating } : null;
+}
+
+function getRating(session: Partial<GameSession> & { totalPoints?: unknown }) {
+  if (typeof session.rating === 'number') {
+    return session.rating;
+  }
+
+  return typeof session.totalPoints === 'number' ? session.totalPoints : null;
 }

@@ -1,20 +1,16 @@
 import { FC, useEffect, useState } from 'react';
 import { Animated, Modal, StyleSheet, Text, View } from 'react-native';
-import { ResultCueKind, ResultCueProps } from './ResultCue.types';
-
-const cueContent: Record<ResultCueKind, { color: string; emoji: string }> = {
-  exact: { color: '#2e7d32', emoji: '👍' },
-  close: { color: '#f9a825', emoji: '👏' },
-  incorrect: { color: '#c62828', emoji: '👎' },
-};
+import { formatRatingChange } from '@/utils/rating';
+import { ResultCueProps } from './ResultCue.types';
 
 export const ResultCue: FC<ResultCueProps> = ({
-  kind,
   onComplete,
+  ratingChange,
   visible,
 }) => {
   const [progress] = useState(() => new Animated.Value(0));
-  const content = cueContent[kind];
+  const color =
+    ratingChange > 0 ? '#2e7d32' : ratingChange < 0 ? '#c62828' : '#616161';
 
   useEffect(() => {
     if (!visible) {
@@ -75,13 +71,14 @@ export const ResultCue: FC<ResultCueProps> = ({
           style={[
             styles.cue,
             {
-              backgroundColor: content.color,
               opacity,
               transform: [{ translateX }, { translateY }, { scale }],
             },
           ]}
         >
-          <Text style={styles.emoji}>{content.emoji}</Text>
+          <Text style={[styles.value, { color }]}>
+            {formatRatingChange(ratingChange)}
+          </Text>
         </Animated.View>
       </View>
     </Modal>
@@ -93,17 +90,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cue: {
-    alignItems: 'center',
-    borderRadius: 32,
-    elevation: 8,
-    height: 64,
-    justifyContent: 'center',
     position: 'absolute',
     right: 20,
     top: 66,
-    width: 64,
   },
-  emoji: {
-    fontSize: 36,
+  value: {
+    fontSize: 42,
+    fontWeight: '800',
   },
 });
