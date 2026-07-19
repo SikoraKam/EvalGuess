@@ -27,3 +27,20 @@ export function getEngineCategory(evaluation: EngineEvaluation | undefined) {
 
   return 5;
 }
+
+export function formatEngineEvaluation(
+  evaluation: EngineEvaluation | undefined,
+): string {
+  if (!evaluation) {
+    return '0.00';
+  }
+
+  if (evaluation.mate !== undefined) {
+    return `M${evaluation.mate > 0 ? '+' : '-'}${Math.abs(evaluation.mate)}`;
+  }
+
+  const evaluationInPawns = (evaluation.cp ?? 0) / 100;
+  const sign = evaluationInPawns > 0 ? '+' : '';
+
+  return `${sign}${evaluationInPawns.toFixed(2)}`;
+}

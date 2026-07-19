@@ -3,7 +3,7 @@ import {
   getCategoryDifference,
   getPointsBasedOnCategoryDifference,
 } from '../categories';
-import { getEngineCategory } from '../evaluation';
+import { formatEngineEvaluation, getEngineCategory } from '../evaluation';
 
 describe('getEngineCategory', () => {
   it.each([
@@ -22,6 +22,14 @@ describe('getEngineCategory', () => {
     [{ mate: 1 }, 5],
   ])('maps %o to category %i', (evaluation, expectedCategory) => {
     expect(getEngineCategory(evaluation)).toBe(expectedCategory);
+  });
+});
+
+describe('formatEngineEvaluation', () => {
+  it('formats centipawn and mate scores for display', () => {
+    expect(formatEngineEvaluation({ cp: 83 })).toBe('+0.83');
+    expect(formatEngineEvaluation({ cp: -50 })).toBe('-0.50');
+    expect(formatEngineEvaluation({ mate: 3 })).toBe('M+3');
   });
 });
 

@@ -1,9 +1,10 @@
 import { CategoryLabels } from '@/const/categories';
+import { EngineEvaluation } from '@/utils/evaluation';
 
 export interface EvaluationResultModalProps {
   visible: boolean;
-  onClose: () => void;
   onNext: () => void;
-  engineEval: number;
+  engineCategory: number;
+  engineEvaluation: EngineEvaluation | undefined;
   userEvalCategory: CategoryLabels;
 }

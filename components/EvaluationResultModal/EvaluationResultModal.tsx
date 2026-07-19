@@ -8,17 +8,18 @@ import {
   Animated,
 } from 'react-native';
 import { EvaluationResultModalProps } from './EvaluationResultModal.types';
-import { AntDesign } from '@expo/vector-icons';
 import { StandardButton } from '../common';
 import {
+  getCategoryLabelBasedOnValue,
   getCategoryDifference,
   getPointsBasedOnCategoryDifference,
   getRangeFromCategoryLabel,
 } from '@/utils/categories';
+import { formatEngineEvaluation } from '@/utils/evaluation';
 
 export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
-  engineEval,
-  onClose,
+  engineCategory,
+  engineEvaluation,
   onNext,
   userEvalCategory,
   visible,
@@ -42,11 +43,6 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
     outputRange: [0, 160],
   });
 
-  const handleClose = () => {
-    setDetailsVisible(false);
-    onClose();
-  };
-
   const handleNext = () => {
     setDetailsVisible(false);
     onNext();
@@ -57,21 +53,20 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={handleClose}
+      onRequestClose={() => undefined}
     >
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
-            <View style={{ height: 24, width: 24 }} />
             <Text style={styles.title}>Evaluation Result</Text>
-
-            <Pressable onPress={handleClose}>
-              <AntDesign name="close" size={24} color="gray" />
-            </Pressable>
           </View>
 
           <Text style={styles.item}>
-            Engine Evaluation: <Text style={styles.value}>{engineEval}</Text>
+            Engine Evaluation:{' '}
+            <Text style={styles.value}>
+              {formatEngineEvaluation(engineEvaluation)} (
+              {getCategoryLabelBasedOnValue(engineCategory)})
+            </Text>
           </Text>
 
           <Text style={styles.item}>
@@ -85,7 +80,7 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
             Points Earned:{' '}
             <Text style={styles.value}>
               {getPointsBasedOnCategoryDifference(
-                getCategoryDifference(userEvalCategory, engineEval),
+                getCategoryDifference(userEvalCategory, engineCategory),
               )}
             </Text>
           </Text>
@@ -156,8 +151,6 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 15,
   },

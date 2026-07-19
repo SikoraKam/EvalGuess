@@ -1,4 +1,4 @@
-import { Board, EvaluationSlider } from '@/components';
+import { Board, EvaluationSlider, ResultCue } from '@/components';
 import { StandardButton } from '@/components/common';
 import { EvaluationResultModal } from '@/components/EvaluationResultModal';
 import { CategoryLabels } from '@/const/categories';
@@ -10,7 +10,7 @@ import {
 import { getEngineCategory } from '@/utils/evaluation';
 import { createGameSession, getNextGameSession } from '@/utils/gameSession';
 import { loadGameSession, saveGameSession } from '@/utils/gameStorage';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 
 export default function Index() {
@@ -19,6 +19,8 @@ export default function Index() {
   );
   const [selectedValueOnSlider, setSelectedValueOnSlider] = useState(0);
   const [isResultModalVisible, setIsResultModalVisible] = useState(false);
+  const [isResultCueVisible, setIsResultCueVisible] = useState(false);
+  const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
   const [isSessionLoaded, setIsSessionLoaded] = useState(false);
 
   const position = positionsExample[session.currentPositionIndex];
@@ -28,9 +30,17 @@ export default function Index() {
     CategoryLabels[
       `${selectedValueOnSlider}Category` as keyof typeof CategoryLabels
     ];
-  const points = getPointsBasedOnCategoryDifference(
-    getCategoryDifference(userEvalCategory, engineCategory),
+  const categoryDifference = getCategoryDifference(
+    userEvalCategory,
+    engineCategory,
   );
+  const points = getPointsBasedOnCategoryDifference(categoryDifference);
+  const feedbackKind =
+    categoryDifference === 0
+      ? 'exact'
+      : categoryDifference === 1
+        ? 'close'
+        : 'incorrect';
 
   useEffect(() => {
     let isMounted = true;
@@ -62,14 +72,18 @@ export default function Index() {
     }
   }, [isSessionLoaded, session]);
 
-  const closeResultModal = () => setIsResultModalVisible(false);
+  const showResultModal = useCallback(() => {
+    setIsResultCueVisible(false);
+    setIsResultModalVisible(true);
+  }, []);
 
   const goToNextPosition = () => {
     setSession((currentSession) =>
       getNextGameSession(currentSession, positionsExample.length, points),
     );
     setSelectedValueOnSlider(0);
-    closeResultModal();
+    setIsResultModalVisible(false);
+    setIsAnswerSubmitted(false);
   };
 
   if (!isSessionLoaded) {
@@ -102,18 +116,28 @@ export default function Index() {
 
         <StandardButton
           style={{ marginTop: 30 }}
-          onPress={() => setIsResultModalVisible(true)}
+          disabled={isAnswerSubmitted}
+          onPress={() => {
+            setIsAnswerSubmitted(true);
+            setIsResultCueVisible(true);
+          }}
         >
           Evaluate
         </StandardButton>
       </View>
 
       <EvaluationResultModal
-        engineEval={engineCategory}
-        onClose={closeResultModal}
+        engineCategory={engineCategory}
+        engineEvaluation={engineEvaluation}
         onNext={goToNextPosition}
         userEvalCategory={userEvalCategory}
         visible={isResultModalVisible}
+      />
+
+      <ResultCue
+        kind={feedbackKind}
+        onComplete={showResultModal}
+        visible={isResultCueVisible}
       />
     </View>
   );
