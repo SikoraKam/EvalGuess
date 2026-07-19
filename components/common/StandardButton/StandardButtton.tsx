@@ -4,22 +4,21 @@ import { StandardButtonProps } from './StandardButton.types';
 
 export const StandardButton: FC<StandardButtonProps> = ({
   children,
+  style,
   ...props
 }) => {
   return (
     <Pressable
       {...props}
-      style={({ pressed }) => [
+      style={(state) => [
         {
-          backgroundColor: pressed ? '#ddd' : '#4CAF50',
+          backgroundColor: state.pressed ? '#ddd' : '#4CAF50',
           padding: 10,
           borderRadius: 5,
           alignItems: 'center',
         },
         props.disabled && { backgroundColor: '#ccc' },
-        typeof props.style === 'object' && props.style !== null
-          ? props.style
-          : {},
+        typeof style === 'function' ? style(state) : style,
       ]}
     >
       {typeof children === 'string' ? (

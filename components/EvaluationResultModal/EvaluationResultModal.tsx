@@ -1,4 +1,4 @@
-import React, { useState, useRef, FC } from 'react';
+import React, { FC, useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -19,56 +19,53 @@ import {
 export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
   engineEval,
   onClose,
-  points,
+  onNext,
   userEvalCategory,
   visible,
 }) => {
   const [detailsVisible, setDetailsVisible] = useState(false);
-  const [shouldApplyDetailsStyle, setShouldApplyDetailsStyle] = useState(false); // style gate
+  const [detailsProgress] = useState(() => new Animated.Value(0));
 
-  const animatedHeight = useRef(new Animated.Value(0)).current;
-  const animatedOpacity = useRef(new Animated.Value(0)).current;
-
-  const toggleDetails = () => {
-    const showing = !detailsVisible;
-    setDetailsVisible(showing);
-
-    if (showing) {
-      setShouldApplyDetailsStyle(true); // show styles immediately
-    }
-
-    Animated.parallel([
-      Animated.timing(animatedHeight, {
-        toValue: showing ? 1 : 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-      Animated.timing(animatedOpacity, {
-        toValue: showing ? 1 : 0,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start(() => {
-      if (!showing) {
-        setShouldApplyDetailsStyle(false); // remove styles after animation ends
-      }
+  useEffect(() => {
+    const animation = Animated.timing(detailsProgress, {
+      toValue: detailsVisible ? 1 : 0,
+      duration: 300,
+      useNativeDriver: false,
     });
-  };
 
-  const interpolatedHeight = animatedHeight.interpolate({
+    animation.start();
+    return () => animation.stop();
+  }, [detailsProgress, detailsVisible]);
+
+  const interpolatedHeight = detailsProgress.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 160],
   });
 
+  const handleClose = () => {
+    setDetailsVisible(false);
+    onClose();
+  };
+
+  const handleNext = () => {
+    setDetailsVisible(false);
+    onNext();
+  };
+
   return (
-    <Modal visible={visible} transparent animationType="fade">
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={handleClose}
+    >
       <View style={styles.overlay}>
         <View style={styles.modal}>
           <View style={styles.header}>
             <View style={{ height: 24, width: 24 }} />
             <Text style={styles.title}>Evaluation Result</Text>
 
-            <Pressable onPress={onClose}>
+            <Pressable onPress={handleClose}>
               <AntDesign name="close" size={24} color="gray" />
             </Pressable>
           </View>
@@ -93,7 +90,10 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
             </Text>
           </Text>
 
-          <Pressable style={styles.textButton} onPress={toggleDetails}>
+          <Pressable
+            style={styles.textButton}
+            onPress={() => setDetailsVisible((current) => !current)}
+          >
             <Text
               style={{ textDecorationLine: 'underline', fontWeight: '600' }}
             >
@@ -105,10 +105,10 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
             style={[
               {
                 height: interpolatedHeight,
-                opacity: animatedOpacity,
+                opacity: detailsProgress,
                 overflow: 'hidden',
               },
-              shouldApplyDetailsStyle && styles.details,
+              detailsVisible && styles.details,
             ]}
           >
             <Text style={styles.detailsText}>Scoring Rules:</Text>
@@ -132,7 +132,9 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
             </Text>
           </Animated.View>
 
-          <StandardButton style={styles.button}>Next</StandardButton>
+          <StandardButton style={styles.button} onPress={handleNext}>
+            Next
+          </StandardButton>
         </View>
       </View>
     </Modal>
