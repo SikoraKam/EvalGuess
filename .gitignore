@@ -37,3 +37,6 @@ yarn-error.*
 
 app-example
 .qodo
+
+# Generated position index — rebuild with `yarn build:index`
+positions/generated/
