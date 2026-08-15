@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: Theme.spacing.xl,
+    padding: Theme.spacing.xxl,
     backgroundColor: Theme.colors.background,
   },
   icon: {
@@ -43,19 +43,20 @@ const styles = StyleSheet.create({
   },
   message: {
     marginTop: Theme.spacing.md,
+    fontFamily: Theme.font.sansSemibold,
     fontSize: Theme.fontSize.lg,
-    fontWeight: '600',
     color: Theme.colors.text,
     textAlign: 'center',
   },
   detail: {
     marginTop: Theme.spacing.sm,
+    fontFamily: Theme.font.sans,
     fontSize: Theme.fontSize.md,
     color: Theme.colors.textMuted,
     textAlign: 'center',
   },
   button: {
-    marginTop: Theme.spacing.xl,
+    marginTop: Theme.spacing.xxl,
     minWidth: 200,
   },
 });

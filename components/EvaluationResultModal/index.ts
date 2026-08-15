@@ -1,1 +1,0 @@
-export { EvaluationResultModal } from './EvaluationResultModal';

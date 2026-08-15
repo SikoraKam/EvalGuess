@@ -1,6 +1,8 @@
 // https://docs.expo.dev/guides/using-eslint/
 module.exports = {
   extends: ['expo', 'eslint:recommended', 'prettier'],
+  // React Native supplies the timer and console globals the app code uses.
+  env: { 'shared-node-browser': true },
   plugins: ['prettier', 'react', 'react-hooks'],
   rules: {
     'prettier/prettier': 'error',

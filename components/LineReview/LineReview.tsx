@@ -1,5 +1,6 @@
 import { FC } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { SectionLabel } from '../common';
 import { Theme } from '@/const/theme';
 import { formatMoveNumber } from '@/utils/lineReplay';
 import { LineReviewProps } from './LineReview.types';
@@ -26,7 +27,7 @@ export const LineReview: FC<LineReviewProps> = ({
 
   return (
     <View style={[styles.container, { width }]}>
-      <Text style={styles.title}>Engine&apos;s best line</Text>
+      <SectionLabel>Engine&apos;s best line</SectionLabel>
 
       <ScrollView
         horizontal
@@ -92,7 +93,11 @@ const ControlButton: FC<{
     disabled={disabled}
     accessibilityRole="button"
     accessibilityLabel={label}
-    style={[styles.control, disabled && styles.controlDisabled]}
+    style={({ pressed }) => [
+      styles.control,
+      pressed && styles.controlPressed,
+      disabled && styles.controlDisabled,
+    ]}
   >
     <Text style={styles.controlText}>{label}</Text>
   </Pressable>
@@ -100,16 +105,11 @@ const ControlButton: FC<{
 
 const styles = StyleSheet.create({
   container: {
-    marginTop: Theme.spacing.lg,
-    padding: Theme.spacing.md,
-    borderRadius: Theme.radius.lg,
+    padding: Theme.spacing.lg,
+    borderRadius: Theme.radius.xl,
+    borderWidth: 1,
     backgroundColor: Theme.colors.surface,
-  },
-  title: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: '700',
-    color: Theme.colors.text,
-    marginBottom: Theme.spacing.sm,
+    borderColor: Theme.colors.border,
   },
   moves: {
     gap: Theme.spacing.xs,
@@ -121,15 +121,16 @@ const styles = StyleSheet.create({
     borderRadius: Theme.radius.sm,
   },
   moveActive: {
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: Theme.colors.accentTintStrong,
   },
   moveText: {
+    fontFamily: Theme.font.monoMedium,
     fontSize: Theme.fontSize.md,
     color: Theme.colors.textMuted,
   },
   moveTextActive: {
-    color: Theme.colors.accentText,
-    fontWeight: '700',
+    fontFamily: Theme.font.monoBold,
+    color: Theme.colors.accentBright,
   },
   controls: {
     flexDirection: 'row',
@@ -140,21 +141,28 @@ const styles = StyleSheet.create({
   },
   control: {
     paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.xs,
+    paddingVertical: Theme.spacing.xs + 2,
     borderRadius: Theme.radius.sm,
-    backgroundColor: Theme.colors.accentSoft,
+    borderWidth: 1,
+    backgroundColor: Theme.colors.surfaceStrong,
+    borderColor: Theme.colors.border,
+  },
+  controlPressed: {
+    backgroundColor: Theme.colors.accentTintStrong,
   },
   controlDisabled: {
-    opacity: 0.4,
+    opacity: 0.35,
   },
   controlText: {
-    color: Theme.colors.accentText,
-    fontWeight: '700',
+    fontFamily: Theme.font.sansSemibold,
+    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.accentBright,
   },
   counter: {
     minWidth: 56,
     textAlign: 'center',
-    fontSize: Theme.fontSize.md,
+    fontFamily: Theme.font.monoMedium,
+    fontSize: Theme.fontSize.sm,
     color: Theme.colors.textMuted,
   },
 });

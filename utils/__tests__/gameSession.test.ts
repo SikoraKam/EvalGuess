@@ -1,4 +1,10 @@
-import { createInitialGameSession, getNextGameSession } from '../gameSession';
+import {
+  applyGuessResult,
+  createEmptyBuckets,
+  createInitialGameSession,
+  GameSession,
+  getNextGameSession,
+} from '../gameSession';
 import { findCandidateRange, PositionIndex } from '../positionSelection';
 import { MIN_PLAYER_RATING } from '../rating';
 
@@ -17,40 +23,233 @@ describe('game session', () => {
     sortedRatings: new Uint16Array([900, 1000, 1100]),
   };
 
+  const DAY = '2026-01-01';
+
+  /** An exact call on a "Slight edge for White" position, worth +20. */
+  const exactGuess = {
+    guessCategory: 1,
+    engineCategory: 1,
+    categoryDifference: 0,
+    ratingChange: 20,
+  };
+
   it('initializes game session correctly', () => {
     // random returning 0 picks the first candidate (rating 900)
-    const session = createInitialGameSession(index, 1000, () => 0);
+    const session = createInitialGameSession(index, 1000, () => 0, DAY);
 
     expect(session).toEqual({
+      mode: 'rated',
       rating: 1000,
       completedPositions: 0,
       correctGuesses: 0,
       currentPositionRef: { fileIndex: 0, lineIndex: 0 },
       currentPositionRating: 900,
       recentPositionKeys: ['0:0'],
+      currentStreak: 0,
+      bestStreak: 0,
+      totalCategoryError: 0,
+      ratingHistory: [1000],
+      bucketAttempts: createEmptyBuckets(),
+      bucketExact: createEmptyBuckets(),
+      recentGuesses: [],
+      dayKey: DAY,
+      solvedToday: 0,
+      dailySolved: 0,
+      lastResult: null,
     });
   });
 
   it('updates session and selects next position correctly', () => {
-    const session = createInitialGameSession(index, 1000, () => 0);
+    const session = createInitialGameSession(index, 1000, () => 0, DAY);
 
     const nextSession = getNextGameSession(
       session,
       index,
-      20,
-      true,
+      exactGuess,
       1000,
       () => 0.5,
+      DAY,
     );
 
     expect(nextSession).toEqual({
+      mode: 'rated',
       rating: 1020,
       completedPositions: 1,
       correctGuesses: 1,
       currentPositionRef: { fileIndex: 0, lineIndex: 1 },
       currentPositionRating: 1000,
       recentPositionKeys: ['0:1', '0:0'],
+      currentStreak: 1,
+      bestStreak: 1,
+      totalCategoryError: 0,
+      ratingHistory: [1000, 1020],
+      bucketAttempts: [0, 1, 0, 0, 0, 0],
+      bucketExact: [0, 1, 0, 0, 0, 0],
+      recentGuesses: [{ ...exactGuess, rating: 1020 }],
+      dayKey: DAY,
+      solvedToday: 1,
+      // Only a daily run fills the daily set, and the answer is behind us.
+      dailySolved: 0,
+      lastResult: null,
     });
+  });
+
+  it('keeps the best streak after the current one is broken', () => {
+    let session = createInitialGameSession(index, 1000, () => 0, DAY);
+
+    for (let round = 0; round < 3; round += 1) {
+      session = getNextGameSession(
+        session,
+        index,
+        exactGuess,
+        1000,
+        () => 0,
+        DAY,
+      );
+    }
+
+    session = getNextGameSession(
+      session,
+      index,
+      { ...exactGuess, categoryDifference: 2, ratingChange: -8 },
+      1000,
+      () => 0,
+      DAY,
+    );
+
+    expect(session.currentStreak).toBe(0);
+    expect(session.bestStreak).toBe(3);
+    expect(session.totalCategoryError).toBe(2);
+  });
+
+  it('restarts the daily counter on a new day', () => {
+    let session = createInitialGameSession(index, 1000, () => 0, DAY);
+
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+
+    expect(session.solvedToday).toBe(2);
+
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      '2026-01-02',
+    );
+
+    expect(session.solvedToday).toBe(1);
+    expect(session.dayKey).toBe('2026-01-02');
+  });
+
+  it('scores the answer without moving off the position', () => {
+    const session = createInitialGameSession(index, 1000, () => 0, DAY);
+    const answered = applyGuessResult(session, exactGuess, DAY);
+
+    expect(answered).toMatchObject({
+      rating: 1020,
+      completedPositions: 1,
+      currentStreak: 1,
+      lastResult: exactGuess,
+      currentPositionRef: session.currentPositionRef,
+      currentPositionRating: session.currentPositionRating,
+    });
+  });
+
+  it('clears the answer once the next position is chosen', () => {
+    const session = createInitialGameSession(index, 1000, () => 0, DAY);
+    const answered = applyGuessResult(session, exactGuess, DAY);
+    const next = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0.5,
+      DAY,
+    );
+
+    expect(answered.lastResult).toEqual(exactGuess);
+    expect(next.lastResult).toBeNull();
+  });
+
+  it('fills the daily set only while the run is a daily one', () => {
+    let session: GameSession = {
+      ...createInitialGameSession(index, 1000, () => 0, DAY),
+      mode: 'daily',
+    };
+
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+
+    expect(session.dailySolved).toBe(2);
+    expect(session.solvedToday).toBe(2);
+
+    session = getNextGameSession(
+      { ...session, mode: 'rated' },
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+
+    expect(session.dailySolved).toBe(2);
+    expect(session.solvedToday).toBe(3);
+  });
+
+  it('restarts the daily set on a new day', () => {
+    let session: GameSession = {
+      ...createInitialGameSession(index, 1000, () => 0, DAY),
+      mode: 'daily',
+    };
+
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      DAY,
+    );
+    session = getNextGameSession(
+      session,
+      index,
+      exactGuess,
+      1000,
+      () => 0,
+      '2026-01-02',
+    );
+
+    expect(session.dailySolved).toBe(1);
   });
 
   it('avoids recently seen positions', () => {
@@ -65,8 +264,7 @@ describe('game session', () => {
     const nextSession = getNextGameSession(
       session,
       index,
-      10,
-      false,
+      { ...exactGuess, categoryDifference: 1, ratingChange: 10 },
       1000,
       mockRandom,
     );
@@ -82,7 +280,13 @@ describe('game session', () => {
     let session = createInitialGameSession(index, 1000, () => 0);
 
     for (let round = 0; round < 200; round += 1) {
-      session = getNextGameSession(session, index, -30, false, 1000, () => 0);
+      session = getNextGameSession(
+        session,
+        index,
+        { ...exactGuess, categoryDifference: 3, ratingChange: -30 },
+        1000,
+        () => 0,
+      );
     }
 
     expect(session.rating).toBe(MIN_PLAYER_RATING);

@@ -1,6 +1,7 @@
 import { FC } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Theme } from '@/const/theme';
+import { useSettings } from '@/providers';
 import { BoardHeaderProps } from './BoardHeader.types';
 
 /**
@@ -9,36 +10,50 @@ import { BoardHeaderProps } from './BoardHeader.types';
  */
 export const BoardHeader: FC<BoardHeaderProps> = ({
   sideToMove,
+  moveNumber,
   onToggleFlip,
   width,
 }) => {
+  const { settings, haptic } = useSettings();
   const isWhite = sideToMove === 'w';
 
   return (
     <View style={[styles.container, { width }]}>
       <View style={styles.side}>
-        <View
-          style={[
-            styles.pill,
-            {
-              backgroundColor: isWhite
-                ? Theme.colors.whitePill
-                : Theme.colors.blackPill,
-            },
-          ]}
-        />
-        <Text style={styles.label}>
-          {isWhite ? 'White to move' : 'Black to move'}
-        </Text>
+        {settings.alwaysShowSideToMove && (
+          <>
+            <View
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: isWhite
+                    ? Theme.colors.whitePill
+                    : Theme.colors.blackPill,
+                },
+              ]}
+            />
+            <Text style={styles.label}>
+              {isWhite ? 'White to move' : 'Black to move'}
+            </Text>
+          </>
+        )}
+
+        {moveNumber !== null && moveNumber !== undefined && (
+          <Text style={styles.move}>MOVE {moveNumber}</Text>
+        )}
       </View>
 
       <Pressable
-        onPress={onToggleFlip}
+        onPress={() => {
+          haptic('light');
+          onToggleFlip();
+        }}
         accessibilityRole="button"
         accessibilityLabel="Flip board"
         hitSlop={8}
+        style={({ pressed }) => [styles.flip, pressed && styles.flipPressed]}
       >
-        <Text style={styles.flip}>Flip</Text>
+        <Text style={styles.flipLabel}>⇅ Flip</Text>
       </Pressable>
     </View>
   );
@@ -56,21 +71,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Theme.spacing.sm,
   },
-  pill: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+  dot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: Theme.colors.neutral,
+    borderColor: Theme.colors.textFaint,
   },
   label: {
+    fontFamily: Theme.font.sansSemibold,
     fontSize: Theme.fontSize.md,
-    fontWeight: '600',
     color: Theme.colors.text,
   },
+  move: {
+    fontFamily: Theme.font.monoMedium,
+    fontSize: Theme.fontSize.xxs,
+    color: Theme.colors.textFaint,
+    letterSpacing: 0.8,
+  },
   flip: {
-    fontSize: Theme.fontSize.md,
-    fontWeight: '600',
-    color: Theme.colors.accentText,
+    paddingHorizontal: Theme.spacing.md - 2,
+    paddingVertical: 5,
+    borderRadius: Theme.radius.sm,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
+    backgroundColor: Theme.colors.surfaceStrong,
+  },
+  flipPressed: {
+    backgroundColor: Theme.colors.accentTintStrong,
+    borderColor: Theme.colors.accentBorder,
+  },
+  flipLabel: {
+    fontFamily: Theme.font.sansSemibold,
+    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.textMuted,
   },
 });

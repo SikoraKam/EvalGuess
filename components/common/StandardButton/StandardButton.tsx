@@ -1,5 +1,6 @@
 import { FC } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Theme } from '@/const/theme';
 import { StandardButtonProps } from './StandardButton.types';
 
@@ -7,9 +8,31 @@ export const StandardButton: FC<StandardButtonProps> = ({
   children,
   style,
   variant = 'primary',
+  uppercase = variant === 'primary',
   ...props
 }) => {
-  const isSecondary = variant === 'secondary';
+  const isPrimary = variant === 'primary';
+  const isDisabled = props.disabled === true;
+
+  // Pressable allows render-prop children, which this button does not use;
+  // anything but a plain label is passed straight through.
+  const content = typeof children === 'function' ? null : children;
+
+  const label =
+    typeof children === 'string' ? (
+      <Text
+        style={[
+          styles.label,
+          styles[`${variant}Label`],
+          uppercase && styles.uppercase,
+          isDisabled && styles.disabledLabel,
+        ]}
+      >
+        {uppercase ? children.toUpperCase() : children}
+      </Text>
+    ) : (
+      content
+    );
 
   return (
     <Pressable
@@ -17,53 +40,74 @@ export const StandardButton: FC<StandardButtonProps> = ({
       {...props}
       style={(state) => [
         styles.base,
-        isSecondary ? styles.secondary : styles.primary,
-        state.pressed &&
-          (isSecondary ? styles.secondaryPressed : styles.primaryPressed),
-        props.disabled && styles.disabled,
+        !isPrimary && styles[variant],
+        state.pressed && styles.pressed,
+        isDisabled && styles.disabled,
         typeof style === 'function' ? style(state) : style,
       ]}
     >
-      {typeof children === 'string' ? (
-        <Text style={[styles.label, isSecondary && styles.secondaryLabel]}>
-          {children}
-        </Text>
-      ) : (
-        children
+      {isPrimary && !isDisabled && (
+        <LinearGradient
+          colors={Theme.gradients.accent}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
       )}
+
+      <View style={styles.content}>{label}</View>
     </Pressable>
   );
 };
 
 const styles = StyleSheet.create({
   base: {
-    paddingVertical: Theme.spacing.md,
+    paddingVertical: Theme.spacing.lg - 1,
     paddingHorizontal: Theme.spacing.lg,
-    borderRadius: Theme.radius.md,
+    borderRadius: Theme.radius.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  content: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  primary: {
-    backgroundColor: Theme.colors.primary,
-  },
-  primaryPressed: {
-    backgroundColor: Theme.colors.primaryPressed,
-  },
   secondary: {
-    backgroundColor: Theme.colors.accentSoft,
+    backgroundColor: Theme.colors.surfaceStrong,
+    borderWidth: 1,
+    borderColor: Theme.colors.borderStrong,
   },
-  secondaryPressed: {
-    opacity: 0.7,
+  ghost: {
+    paddingVertical: Theme.spacing.sm,
+  },
+  pressed: {
+    opacity: 0.82,
+    transform: [{ translateY: 1 }],
   },
   disabled: {
-    backgroundColor: Theme.colors.disabled,
+    backgroundColor: Theme.colors.surface,
+    borderWidth: 1,
+    borderColor: Theme.colors.border,
   },
   label: {
-    color: '#ffffff',
+    fontFamily: Theme.font.sansBold,
     fontSize: Theme.fontSize.lg,
-    fontWeight: '600',
+  },
+  primaryLabel: {
+    color: Theme.colors.onAccent,
   },
   secondaryLabel: {
-    color: Theme.colors.accentText,
+    color: Theme.colors.text,
+  },
+  ghostLabel: {
+    color: Theme.colors.accentBright,
+    fontSize: Theme.fontSize.md,
+  },
+  uppercase: {
+    letterSpacing: 0.9,
+  },
+  disabledLabel: {
+    color: Theme.colors.textFaint,
   },
 });

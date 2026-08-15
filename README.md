@@ -115,14 +115,52 @@ away from the engine, played against the position's difficulty rating.
 ## Layout
 
 ```
-app/            expo-router screens; index.tsx is the whole game screen
-components/     presentational components, one folder each
-const/          category table (single source of truth) and theme tokens
+app/            expo-router screens (tabs: Train, Profile, Settings)
+components/     presentational components, one folder each; common/ is the kit
+const/          category table, board skins, and the design tokens
+providers/      the game session and the app settings, shared across screens
 utils/          game logic, storage, data access — where the tests live
 positions/      dataset + generated index
 scripts/        offline index builder and the difficulty model
 ```
 
+Routes:
+
+```
+app/(tabs)/(train)/index.tsx   home: rating, streak, run modes, daily target
+app/(tabs)/(train)/play.tsx    the board and the guess
+app/(tabs)/profile.tsx         rating history and accuracy breakdown
+app/(tabs)/settings.tsx        board, gameplay, feedback and data settings
+```
+
+Home and the board share one tab, so pushing the board keeps Train selected and
+going back leaves the session untouched.
+
 `utils/gameMachine.ts` holds the screen's state machine as a pure reducer, so
 the flow (loading → guessing → cue → result → review) is testable without
-rendering anything.
+rendering anything. `providers/GameProvider.tsx` runs that reducer above the
+router, which is why the home and profile screens can read the same session the
+board is playing.
+
+## The design system
+
+`const/theme.ts` is the single source of visual truth: one dark palette built
+around one accent, plus spacing, radii, gradients, motion durations and the two
+type families (Space Grotesk for language, JetBrains Mono for anything numeric).
+`Type` holds the text presets — components spread one of those rather than
+assembling their own size/family/weight triple. `const/boardThemes.ts` holds the
+four board skins, and nothing outside these two files hard-codes a colour.
+
+Reusable pieces live in `components/common/`: `Card`, `Chip`, `Toggle`,
+`ProgressBar`, `Sparkline`, `StatTile`, `Pill`, `SectionLabel`, `GlowOrb` and
+`StandardButton`.
+
+## Settings
+
+`utils/settings.ts` defines what the player can change and
+`providers/SettingsProvider.tsx` persists it. Every one of them does something:
+the board skin and coordinates redraw the board, the input style swaps the
+slider for the bucket grid or makes the engine bar itself the input, animation
+speed scales every duration in the app (`Off` removes animation entirely),
+auto-play walks the engine's line after each result, and haptics gate the
+feedback calls.

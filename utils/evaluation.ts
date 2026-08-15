@@ -38,6 +38,26 @@ export function getEngineCategory(
   return getCategoryForPawns((evaluation.cp ?? 0) / 100);
 }
 
+/**
+ * Evaluation in pawns, for the bar that draws it. A forced mate has no pawn
+ * value, so it is reported as the far end of the bar on the winning side.
+ */
+export const MATE_IN_PAWNS = 12;
+
+export function getEvaluationInPawns(
+  evaluation: EngineEvaluation | undefined,
+): number {
+  if (!evaluation) {
+    return 0;
+  }
+
+  if (evaluation.mate !== undefined) {
+    return evaluation.mate > 0 ? MATE_IN_PAWNS : -MATE_IN_PAWNS;
+  }
+
+  return (evaluation.cp ?? 0) / 100;
+}
+
 export function formatEngineEvaluation(
   evaluation: EngineEvaluation | undefined,
 ): string {

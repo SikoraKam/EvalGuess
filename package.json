@@ -10,7 +10,7 @@
     "web": "expo start --web",
     "test": "jest --watchman=false",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint app components utils const positions scripts *.js --ext .js,.ts,.tsx",
+    "lint": "eslint app components providers utils const positions scripts *.js --ext .js,.ts,.tsx",
     "verify": "yarn typecheck && yarn lint && yarn test",
     "build:index": "node ./scripts/build-position-index.js"
   },
@@ -31,6 +31,8 @@
     }
   },
   "dependencies": {
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/slider": "5.2.0",
@@ -44,6 +46,7 @@
     "expo-font": "~57.0.1",
     "expo-haptics": "~57.0.1",
     "expo-image": "~57.0.1",
+    "expo-linear-gradient": "~57.0.1",
     "expo-linking": "~57.0.3",
     "expo-router": "~57.0.7",
     "expo-splash-screen": "~57.0.4",

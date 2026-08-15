@@ -1,6 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MAX_CATEGORY } from '@/const/categories';
 import { isValidPositionRef, PositionRef } from '@/positions/types';
-import { GameSession } from '@/utils/gameSession';
+import {
+  createEmptyBuckets,
+  GameMode,
+  GameSession,
+  getDayKey,
+  GuessRecord,
+  GuessResult,
+} from '@/utils/gameSession';
 import { clampPlayerRating, STARTING_RATING } from '@/utils/rating';
 
 const GAME_SESSION_KEY = 'evalguess/game-session';
@@ -9,8 +17,20 @@ const GAME_SESSION_KEY = 'evalguess/game-session';
  * 1 (implicit): `totalPoints` counter starting at 0, or an unbounded Elo that
  *   could sink to zero and below.
  * 2: clamped Elo rating, stamped so the migration below runs exactly once.
+ * 3: streaks, rating history and per-bucket accuracy. A version 2 session is
+ *   read as-is and simply starts those counters from empty.
+ * 4: the game mode, the daily-set counter and the answer already scored
+ *   against the current position. Older saves default to a rated run with an
+ *   unanswered position, which is what they were.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
+
+const GAME_MODES: readonly GameMode[] = ['rated', 'endless', 'daily'];
+
+/** From this version on, `rating` is already on the clamped Elo scale. */
+const ELO_SCALE_VERSION = 2;
+
+const BUCKET_COUNT = MAX_CATEGORY + 1;
 
 type StoredSession = GameSession & { schemaVersion: number };
 
@@ -93,16 +113,40 @@ export function getValidGameSession(
       )
     : [];
 
+  const currentStreak = getCounter(session.currentStreak) ?? 0;
+  const ratingHistory = getNumberList(session.ratingHistory);
+
   return {
+    mode: getMode(session.mode),
     rating,
     completedPositions,
     correctGuesses,
     currentPositionRef,
     currentPositionRating,
     recentPositionKeys,
+    currentStreak,
+    bestStreak: Math.max(getCounter(session.bestStreak) ?? 0, currentStreak),
+    totalCategoryError: getCounter(session.totalCategoryError) ?? 0,
+    ratingHistory: ratingHistory.length > 0 ? ratingHistory : [rating],
+    bucketAttempts: getBuckets(session.bucketAttempts),
+    bucketExact: getBuckets(session.bucketExact),
+    recentGuesses: getRecentGuesses(session.recentGuesses),
+    dayKey: typeof session.dayKey === 'string' ? session.dayKey : getDayKey(),
+    solvedToday: getCounter(session.solvedToday) ?? 0,
+    dailySolved: getCounter(session.dailySolved) ?? 0,
+    lastResult: getGuessResult(session.lastResult),
   };
 }
 
+function getMode(value: unknown): GameMode {
+  return GAME_MODES.includes(value as GameMode) ? (value as GameMode) : 'rated';
+}
+
+/**
+ * Counters added after version 2 are missing from older payloads, so an absent
+ * value is zero rather than a reason to discard the whole session. A present
+ * but malformed value still fails, which is what the version 2 fields rely on.
+ */
 function getCounter(value: unknown): number | null {
   if (value === undefined) {
     return 0;
@@ -113,12 +157,79 @@ function getCounter(value: unknown): number | null {
     : null;
 }
 
+function getNumberList(value: unknown): number[] {
+  return Array.isArray(value)
+    ? value.filter(
+        (entry): entry is number =>
+          typeof entry === 'number' && Number.isFinite(entry),
+      )
+    : [];
+}
+
+function getBuckets(value: unknown): number[] {
+  const counts = createEmptyBuckets();
+  const stored = getNumberList(value);
+
+  for (let index = 0; index < BUCKET_COUNT; index += 1) {
+    const count = stored[index];
+
+    if (Number.isInteger(count) && count >= 0) {
+      counts[index] = count;
+    }
+  }
+
+  return counts;
+}
+
+function isGuessResult(value: unknown): value is GuessResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const result = value as Partial<GuessResult>;
+
+  return (
+    typeof result.guessCategory === 'number' &&
+    typeof result.engineCategory === 'number' &&
+    typeof result.categoryDifference === 'number' &&
+    typeof result.ratingChange === 'number'
+  );
+}
+
+function getRecentGuesses(value: unknown): GuessRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter(
+    (entry): entry is GuessRecord =>
+      isGuessResult(entry) &&
+      typeof (entry as Partial<GuessRecord>).rating === 'number',
+  );
+}
+
+/** A malformed answer is dropped, which simply re-asks the position. */
+function getGuessResult(value: unknown): GuessResult | null {
+  if (!isGuessResult(value)) {
+    return null;
+  }
+
+  return {
+    guessCategory: value.guessCategory,
+    engineCategory: value.engineCategory,
+    categoryDifference: value.categoryDifference,
+    ratingChange: value.ratingChange,
+  };
+}
+
 /**
- * Runs at most once per install: anything without a schema version is read on
+ * Runs at most once per install: anything from before the Elo scale is read on
  * the old scale, converted, and then written back stamped as current.
  */
 function getMigratedRating(session: LegacySession): number | null {
-  if (session.schemaVersion === SCHEMA_VERSION) {
+  const version = session.schemaVersion;
+
+  if (typeof version === 'number' && version >= ELO_SCALE_VERSION) {
     return typeof session.rating === 'number' && Number.isFinite(session.rating)
       ? clampPlayerRating(session.rating)
       : null;

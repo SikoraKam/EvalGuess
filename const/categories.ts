@@ -22,10 +22,15 @@ const MAGNITUDE_LABELS = [
 export const MIN_CATEGORY = -CATEGORY_THRESHOLDS.length;
 export const MAX_CATEGORY = CATEGORY_THRESHOLDS.length;
 
+export type EvaluationSide = 'white' | 'black' | 'none';
+
 export interface EvaluationCategory {
   value: number;
   label: string;
   range: string;
+  /** The magnitude on its own ("Slight edge"), for compact bucket tiles. */
+  magnitudeLabel: string;
+  side: EvaluationSide;
 }
 
 function buildLabel(value: number): string {
@@ -69,7 +74,13 @@ export const EVALUATION_CATEGORIES: readonly EvaluationCategory[] = Array.from(
   (_, offset) => {
     const value = offset + MIN_CATEGORY;
 
-    return { value, label: buildLabel(value), range: buildRange(value) };
+    return {
+      value,
+      label: buildLabel(value),
+      range: buildRange(value),
+      magnitudeLabel: MAGNITUDE_LABELS[Math.abs(value)],
+      side: value === 0 ? 'none' : value > 0 ? 'white' : 'black',
+    };
   },
 );
 
