@@ -23,3 +23,19 @@ export interface PositionRef {
 export function positionRefKey(ref: PositionRef): string {
   return `${ref.fileIndex}:${ref.lineIndex}`;
 }
+
+export function isValidPositionRef(
+  ref: PositionRef,
+  fileCount: number,
+  lineCountForFile: (fileIndex: number) => number,
+): boolean {
+  if (!Number.isInteger(ref.fileIndex) || !Number.isInteger(ref.lineIndex)) {
+    return false;
+  }
+
+  if (ref.fileIndex < 0 || ref.fileIndex >= fileCount) {
+    return false;
+  }
+
+  return ref.lineIndex >= 0 && ref.lineIndex < lineCountForFile(ref.fileIndex);
+}

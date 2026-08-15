@@ -1,6 +1,19 @@
 export const STARTING_RATING = 1000;
 export const DEFAULT_K_FACTOR = 32;
 
+/**
+ * Elo has no natural floor, and without one a long losing streak drifts the
+ * player below the difficulty range of the whole position pool.
+ */
+export const MIN_PLAYER_RATING = 400;
+export const MAX_PLAYER_RATING = 3000;
+
+export function clampPlayerRating(rating: number): number {
+  return Math.round(
+    Math.max(MIN_PLAYER_RATING, Math.min(MAX_PLAYER_RATING, rating)),
+  );
+}
+
 export function guessScore(categoryDifference: number): number {
   if (categoryDifference <= 0) {
     return 1;

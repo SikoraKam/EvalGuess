@@ -1,8 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  DEFAULT_DEV_SETTINGS,
-  DevSettings,
-} from '@/utils/devSettings';
+import { DEFAULT_DEV_SETTINGS, DevSettings } from '@/utils/devSettings';
 
 const DEV_SETTINGS_KEY = 'evalguess/dev-settings';
 

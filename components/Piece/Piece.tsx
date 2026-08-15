@@ -1,9 +1,6 @@
 import { FC } from 'react';
 import { PieceProps } from './Piece.types';
 import { Image } from 'expo-image';
-import { Dimensions, StyleSheet } from 'react-native';
-
-const { width } = Dimensions.get('window');
 
 export const PIECES = {
   br: require('../../assets/images/br.png'),
@@ -20,13 +17,12 @@ export const PIECES = {
   wp: require('../../assets/images/wp.png'),
 };
 
-export const Piece: FC<PieceProps> = ({ name }) => {
-  return <Image source={PIECES[name]} style={styles.piece} />;
+export const Piece: FC<PieceProps> = ({ name, size }) => {
+  return (
+    <Image
+      source={PIECES[name]}
+      style={{ width: size, height: size }}
+      contentFit="contain"
+    />
+  );
 };
-
-const styles = StyleSheet.create({
-  piece: {
-    width: width / 8,
-    height: width / 8,
-  },
-});

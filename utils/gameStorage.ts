@@ -1,9 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PositionRef } from '@/positions/types';
+import { isValidPositionRef, PositionRef } from '@/positions/types';
 import { GameSession } from '@/utils/gameSession';
-import { STARTING_RATING } from '@/utils/rating';
+import { clampPlayerRating, STARTING_RATING } from '@/utils/rating';
 
 const GAME_SESSION_KEY = 'evalguess/game-session';
+
+/**
+ * 1 (implicit): `totalPoints` counter starting at 0, or an unbounded Elo that
+ *   could sink to zero and below.
+ * 2: clamped Elo rating, stamped so the migration below runs exactly once.
+ */
+const SCHEMA_VERSION = 2;
+
+type StoredSession = GameSession & { schemaVersion: number };
+
+type LegacySession = Partial<StoredSession> & { totalPoints?: unknown };
 
 export async function loadGameSession(
   fileCount: number,
@@ -26,10 +37,16 @@ export async function loadGameSession(
 }
 
 export function saveGameSession(session: GameSession) {
-  return AsyncStorage.setItem(GAME_SESSION_KEY, JSON.stringify(session));
+  const stored: StoredSession = { ...session, schemaVersion: SCHEMA_VERSION };
+
+  return AsyncStorage.setItem(GAME_SESSION_KEY, JSON.stringify(stored));
 }
 
-function getValidGameSession(
+export function clearGameSession() {
+  return AsyncStorage.removeItem(GAME_SESSION_KEY);
+}
+
+export function getValidGameSession(
   value: unknown,
   fileCount: number,
   lineCountForFile: (fileIndex: number) => number,
@@ -38,13 +55,8 @@ function getValidGameSession(
     return null;
   }
 
-  const session = value as Partial<GameSession> & {
-    totalPoints?: unknown;
-    currentPositionIndex?: unknown;
-    remainingPositionIndexes?: unknown;
-  };
-
-  const rating = getRating(session);
+  const session = value as LegacySession;
+  const rating = getMigratedRating(session);
 
   if (rating === null) {
     return null;
@@ -59,7 +71,7 @@ function getValidGameSession(
     return null;
   }
 
-  const currentPositionRating = session.currentPositionRating;
+  const { currentPositionRating } = session;
 
   if (
     typeof currentPositionRating !== 'number' ||
@@ -68,12 +80,10 @@ function getValidGameSession(
     return null;
   }
 
-  const counterValues = [session.completedPositions, session.correctGuesses];
+  const completedPositions = getCounter(session.completedPositions);
+  const correctGuesses = getCounter(session.correctGuesses);
 
-  if (
-    !counterValues.every((stat) => Number.isInteger(stat) && stat >= 0) ||
-    !Number.isInteger(rating)
-  ) {
+  if (completedPositions === null || correctGuesses === null) {
     return null;
   }
 
@@ -85,22 +95,46 @@ function getValidGameSession(
 
   return {
     rating,
-    completedPositions: session.completedPositions ?? 0,
-    correctGuesses: session.correctGuesses ?? 0,
+    completedPositions,
+    correctGuesses,
     currentPositionRef,
     currentPositionRating,
     recentPositionKeys,
   };
 }
 
-function getRating(
-  session: Partial<GameSession> & { totalPoints?: unknown },
-) {
-  if (typeof session.rating === 'number') {
-    return session.rating;
+function getCounter(value: unknown): number | null {
+  if (value === undefined) {
+    return 0;
   }
 
-  return typeof session.totalPoints === 'number' ? session.totalPoints : null;
+  return Number.isInteger(value) && (value as number) >= 0
+    ? (value as number)
+    : null;
+}
+
+/**
+ * Runs at most once per install: anything without a schema version is read on
+ * the old scale, converted, and then written back stamped as current.
+ */
+function getMigratedRating(session: LegacySession): number | null {
+  if (session.schemaVersion === SCHEMA_VERSION) {
+    return typeof session.rating === 'number' && Number.isFinite(session.rating)
+      ? clampPlayerRating(session.rating)
+      : null;
+  }
+
+  if (typeof session.totalPoints === 'number') {
+    return clampPlayerRating(STARTING_RATING + session.totalPoints);
+  }
+
+  if (typeof session.rating !== 'number' || !Number.isFinite(session.rating)) {
+    return null;
+  }
+
+  return clampPlayerRating(
+    session.rating <= 0 ? STARTING_RATING + session.rating : session.rating,
+  );
 }
 
 function getPositionRef(value: unknown): PositionRef | null {
@@ -110,36 +144,9 @@ function getPositionRef(value: unknown): PositionRef | null {
 
   const ref = value as PositionRef;
 
-  if (
-    typeof ref.fileIndex !== 'number' ||
-    typeof ref.lineIndex !== 'number'
-  ) {
+  if (typeof ref.fileIndex !== 'number' || typeof ref.lineIndex !== 'number') {
     return null;
   }
 
   return ref;
-}
-
-function isValidPositionRef(
-  ref: PositionRef,
-  fileCount: number,
-  lineCountForFile: (fileIndex: number) => number,
-): boolean {
-  if (!Number.isInteger(ref.fileIndex) || !Number.isInteger(ref.lineIndex)) {
-    return false;
-  }
-
-  if (ref.fileIndex < 0 || ref.fileIndex >= fileCount) {
-    return false;
-  }
-
-  return ref.lineIndex >= 0 && ref.lineIndex < lineCountForFile(ref.fileIndex);
-}
-
-export function migrateLegacyRating(rating: number): number {
-  if (rating <= 0) {
-    return STARTING_RATING + rating;
-  }
-
-  return rating;
 }

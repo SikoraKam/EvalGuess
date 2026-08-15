@@ -6,6 +6,88 @@ const projectRoot = __dirname;
 const positionsDir = path.join(projectRoot, 'positions');
 const generatedDir = path.join(positionsDir, 'generated');
 
+const BINARY_FILES = new Set([
+  'ratings.bin',
+  'sorted-ids.bin',
+  'sorted-ratings.bin',
+]);
+
+/**
+ * Dev-only bridge to the position dataset: it is far too large to bundle, so
+ * Metro serves single lines out of it by byte offset.
+ */
+let manifestCache = null;
+const offsetsCache = new Map();
+
+function readManifest() {
+  if (!manifestCache) {
+    manifestCache = JSON.parse(
+      fs.readFileSync(path.join(generatedDir, 'manifest.json'), 'utf8'),
+    );
+  }
+
+  return manifestCache;
+}
+
+/** Uint32 (byteOffset, byteLength) pairs, one per line. */
+function readOffsets(fileIndex) {
+  const cached = offsetsCache.get(fileIndex);
+
+  if (cached) {
+    return cached;
+  }
+
+  const buffer = fs.readFileSync(
+    path.join(generatedDir, 'offsets', `${fileIndex}.bin`),
+  );
+  // Buffers can be views into a shared pool, so the byte range matters.
+  const offsets = new Uint32Array(
+    buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.length),
+  );
+
+  offsetsCache.set(fileIndex, offsets);
+
+  return offsets;
+}
+
+function readPositionLine(fileIndex, lineIndex) {
+  const manifest = readManifest();
+
+  if (
+    !Number.isInteger(fileIndex) ||
+    fileIndex < 0 ||
+    fileIndex >= manifest.files.length ||
+    !Number.isInteger(lineIndex) ||
+    lineIndex < 0 ||
+    lineIndex >= manifest.counts[fileIndex]
+  ) {
+    return null;
+  }
+
+  const offsets = readOffsets(fileIndex);
+  const byteOffset = offsets[lineIndex * 2];
+  const byteLength = offsets[lineIndex * 2 + 1];
+  const buffer = Buffer.alloc(byteLength);
+  const fileDescriptor = fs.openSync(
+    path.join(positionsDir, manifest.files[fileIndex]),
+    'r',
+  );
+
+  try {
+    const bytesRead = fs.readSync(
+      fileDescriptor,
+      buffer,
+      0,
+      byteLength,
+      byteOffset,
+    );
+
+    return buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    fs.closeSync(fileDescriptor);
+  }
+}
+
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(projectRoot);
 
@@ -20,55 +102,31 @@ config.server.enhanceMiddleware = (middleware) => {
       const relativePath = url.pathname.replace(/^\/positions-data\/?/, '');
 
       if (relativePath === 'manifest.json') {
-        const manifest = fs.readFileSync(
-          path.join(generatedDir, 'manifest.json'),
-          'utf8',
-        );
         response.setHeader('Content-Type', 'application/json');
-        response.end(manifest);
+        response.end(JSON.stringify(readManifest()));
         return undefined;
       }
 
-      if (
-        relativePath === 'ratings.bin' ||
-        relativePath === 'sorted-ids.bin' ||
-        relativePath === 'sorted-ratings.bin'
-      ) {
-        const buffer = fs.readFileSync(path.join(generatedDir, relativePath));
+      if (BINARY_FILES.has(relativePath)) {
         response.setHeader('Content-Type', 'application/octet-stream');
-        response.end(buffer);
+        response.end(fs.readFileSync(path.join(generatedDir, relativePath)));
         return undefined;
       }
 
-      if (relativePath.startsWith('position?')) {
-        const fileIndex = Number(url.searchParams.get('fileIndex'));
-        const lineIndex = Number(url.searchParams.get('lineIndex'));
-        const manifest = JSON.parse(
-          fs.readFileSync(path.join(generatedDir, 'manifest.json'), 'utf8'),
+      if (relativePath === 'position') {
+        const line = readPositionLine(
+          Number(url.searchParams.get('fileIndex')),
+          Number(url.searchParams.get('lineIndex')),
         );
-        const offsets = new Uint32Array(
-          fs.readFileSync(
-            path.join(generatedDir, 'offsets', `${fileIndex}.bin`),
-          ).buffer,
-        );
-        const filePath = path.join(positionsDir, manifest.files[fileIndex]);
-        const fileDescriptor = fs.openSync(filePath, 'r');
-        const buffer = Buffer.alloc(65536);
 
-        try {
-          const bytesRead = fs.readSync(
-            fileDescriptor,
-            buffer,
-            0,
-            buffer.length,
-            offsets[lineIndex],
-          );
-          response.setHeader('Content-Type', 'application/json');
-          response.end(buffer.toString('utf8', 0, bytesRead).trim());
-        } finally {
-          fs.closeSync(fileDescriptor);
+        if (line === null) {
+          response.statusCode = 400;
+          response.end('Invalid position reference');
+          return undefined;
         }
 
+        response.setHeader('Content-Type', 'application/json');
+        response.end(line);
         return undefined;
       }
 
@@ -76,6 +134,7 @@ config.server.enhanceMiddleware = (middleware) => {
       response.end('Not found');
       return undefined;
     } catch (error) {
+      console.error('[positions-data]', error);
       response.statusCode = 500;
       response.end(String(error));
       return undefined;

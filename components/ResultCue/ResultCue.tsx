@@ -1,7 +1,31 @@
 import { FC, useEffect, useState } from 'react';
-import { Animated, Modal, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  Modal,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import * as Haptics from 'expo-haptics';
+import { Theme } from '@/const/theme';
 import { formatRatingChange } from '@/utils/rating';
 import { ResultCueProps } from './ResultCue.types';
+
+function playFeedback(ratingChange: number) {
+  if (Platform.OS === 'web') {
+    return;
+  }
+
+  const style =
+    ratingChange > 0
+      ? Haptics.NotificationFeedbackType.Success
+      : ratingChange < 0
+        ? Haptics.NotificationFeedbackType.Warning
+        : Haptics.NotificationFeedbackType.Error;
+
+  void Haptics.notificationAsync(style).catch(() => undefined);
+}
 
 export const ResultCue: FC<ResultCueProps> = ({
   onComplete,
@@ -10,14 +34,20 @@ export const ResultCue: FC<ResultCueProps> = ({
 }) => {
   const [progress] = useState(() => new Animated.Value(0));
   const color =
-    ratingChange > 0 ? '#2e7d32' : ratingChange < 0 ? '#c62828' : '#616161';
+    ratingChange > 0
+      ? Theme.colors.positive
+      : ratingChange < 0
+        ? Theme.colors.negative
+        : Theme.colors.neutral;
 
   useEffect(() => {
     if (!visible) {
       return;
     }
 
+    playFeedback(ratingChange);
     progress.setValue(0);
+
     const animation = Animated.sequence([
       Animated.timing(progress, {
         toValue: 0.7,
@@ -45,7 +75,7 @@ export const ResultCue: FC<ResultCueProps> = ({
     });
 
     return () => animation.stop();
-  }, [onComplete, progress, visible]);
+  }, [onComplete, progress, ratingChange, visible]);
 
   const opacity = progress.interpolate({
     inputRange: [0, 0.15, 1, 1.2],
@@ -70,10 +100,7 @@ export const ResultCue: FC<ResultCueProps> = ({
         <Animated.View
           style={[
             styles.cue,
-            {
-              opacity,
-              transform: [{ translateX }, { translateY }, { scale }],
-            },
+            { opacity, transform: [{ translateX }, { translateY }, { scale }] },
           ]}
         >
           <Text style={[styles.value, { color }]}>

@@ -1,8 +1,4 @@
-import { Position, PositionRef } from '@/positions/types';
-import {
-  MAX_POSITION_RATING,
-  MIN_POSITION_RATING,
-} from '@/utils/positionDifficulty';
+import { PositionRef, positionRefKey } from '@/positions/types';
 
 export interface PositionManifest {
   files: string[];
@@ -24,9 +20,12 @@ export interface SelectedPosition {
 
 type Random = () => number;
 
-const POSITION_SELECTION_WINDOW = 150;
+const BASE_SELECTION_WINDOW = 150;
+const MAX_SELECTION_WINDOW = 1800;
+/** Widen the window until the pool is large enough to stay varied. */
+const MIN_CANDIDATES = 200;
 const MAX_SELECTION_ATTEMPTS = 40;
-const RECENT_POSITION_LIMIT = 12;
+const RECENT_POSITION_LIMIT = 60;
 
 function globalIdToRef(
   manifest: PositionManifest,
@@ -89,6 +88,46 @@ function findLastIndexAtOrBelow(
   return result;
 }
 
+interface CandidateRange {
+  startIndex: number;
+  endIndex: number;
+}
+
+/**
+ * The pool thins out towards both ends of the difficulty scale, so a fixed
+ * window would serve strong players the same handful of positions forever.
+ */
+export function findCandidateRange(
+  sortedRatings: Uint16Array,
+  playerRating: number,
+): CandidateRange {
+  const fullRange = {
+    startIndex: 0,
+    endIndex: sortedRatings.length - 1,
+  };
+
+  for (
+    let window = BASE_SELECTION_WINDOW;
+    window <= MAX_SELECTION_WINDOW;
+    window *= 2
+  ) {
+    const startIndex = findFirstIndexAtOrAbove(
+      sortedRatings,
+      playerRating - window,
+    );
+    const endIndex = findLastIndexAtOrBelow(
+      sortedRatings,
+      playerRating + window,
+    );
+
+    if (endIndex - startIndex + 1 >= MIN_CANDIDATES) {
+      return { startIndex, endIndex };
+    }
+  }
+
+  return fullRange;
+}
+
 function pickRandomIndex(
   startIndex: number,
   endIndex: number,
@@ -104,44 +143,31 @@ export function selectPositionFromIndex(
   random: Random = Math.random,
 ): SelectedPosition {
   const recentKeys = new Set(recentPositionKeys);
-  const minRating = Math.max(
-    MIN_POSITION_RATING,
-    playerRating - POSITION_SELECTION_WINDOW,
-  );
-  const maxRating = Math.min(
-    MAX_POSITION_RATING,
-    playerRating + POSITION_SELECTION_WINDOW,
+  const { startIndex, endIndex } = findCandidateRange(
+    index.sortedRatings,
+    playerRating,
   );
 
-  let startIndex = findFirstIndexAtOrAbove(index.sortedRatings, minRating);
-  let endIndex = findLastIndexAtOrBelow(index.sortedRatings, maxRating);
+  const toSelection = (sortedIndex: number): SelectedPosition => {
+    const globalId = index.sortedIds[sortedIndex];
 
-  if (startIndex > endIndex || endIndex < 0) {
-    startIndex = 0;
-    endIndex = index.sortedRatings.length - 1;
-  }
+    return {
+      ref: globalIdToRef(index.manifest, globalId),
+      rating: index.ratings[globalId],
+    };
+  };
 
   for (let attempt = 0; attempt < MAX_SELECTION_ATTEMPTS; attempt += 1) {
-    const sortedIndex = pickRandomIndex(startIndex, endIndex, random);
-    const globalId = index.sortedIds[sortedIndex];
-    const ref = globalIdToRef(index.manifest, globalId);
-    const key = `${ref.fileIndex}:${ref.lineIndex}`;
+    const selection = toSelection(
+      pickRandomIndex(startIndex, endIndex, random),
+    );
 
-    if (!recentKeys.has(key)) {
-      return {
-        ref,
-        rating: index.ratings[globalId],
-      };
+    if (!recentKeys.has(positionRefKey(selection.ref))) {
+      return selection;
     }
   }
 
-  const fallbackIndex = pickRandomIndex(startIndex, endIndex, random);
-  const globalId = index.sortedIds[fallbackIndex];
-
-  return {
-    ref: globalIdToRef(index.manifest, globalId),
-    rating: index.ratings[globalId],
-  };
+  return toSelection(pickRandomIndex(startIndex, endIndex, random));
 }
 
 export function trackRecentPositionKey(
@@ -163,8 +189,4 @@ export function createPositionIndex(
     sortedIds: new Uint32Array(sortedIdsBuffer),
     sortedRatings: new Uint16Array(sortedRatingsBuffer),
   };
-}
-
-export async function loadPositionFromJsonLine(line: string): Promise<Position> {
-  return JSON.parse(line) as Position;
 }

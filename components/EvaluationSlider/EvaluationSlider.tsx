@@ -1,52 +1,73 @@
-import React, { FC } from 'react';
-import { View, Text, StyleSheet, Dimensions } from 'react-native';
+import { FC } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
-import { getCategoryLabelBasedOnValue } from '@/utils/categories';
+import { MAX_CATEGORY, MIN_CATEGORY } from '@/const/categories';
+import { Theme } from '@/const/theme';
+import { getCategoryLabel, getCategoryRange } from '@/utils/categories';
 import { EvaluationSliderProps } from './EvaluationSlider.types';
-
-const { width: windowWidth } = Dimensions.get('window');
 
 export const EvaluationSlider: FC<EvaluationSliderProps> = ({
   setValue,
   value,
+  width,
+  disabled = false,
 }) => {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width }]}>
+      <Text style={styles.label}>{getCategoryLabel(value)}</Text>
+      <Text style={styles.range}>{getCategoryRange(value)}</Text>
+
       <Slider
-        style={{ height: 40, width: windowWidth - 80 }}
-        minimumValue={-5}
-        maximumValue={5}
+        style={[styles.slider, { width }]}
+        minimumValue={MIN_CATEGORY}
+        maximumValue={MAX_CATEGORY}
         step={1}
         value={value}
+        disabled={disabled}
         onValueChange={setValue}
-        minimumTrackTintColor="#4CAF50"
-        maximumTrackTintColor="#ddd"
+        minimumTrackTintColor={Theme.colors.primary}
+        maximumTrackTintColor={Theme.colors.border}
+        accessibilityLabel="Your evaluation"
+        accessibilityValue={{ text: getCategoryLabel(value) }}
         tapToSeek
       />
 
-      <Text style={styles.title}>{getCategoryLabelBasedOnValue(value)}</Text>
+      <View style={styles.scale}>
+        <Text style={styles.scaleText}>Black winning</Text>
+        <Text style={styles.scaleText}>Equal</Text>
+        <Text style={styles.scaleText}>White winning</Text>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 4,
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 18,
-    marginBottom: 20,
+  label: {
+    fontSize: Theme.fontSize.xl,
+    fontWeight: '700',
+    color: Theme.colors.text,
     textAlign: 'center',
   },
-  labelContainer: {
+  range: {
+    fontSize: Theme.fontSize.md,
+    color: Theme.colors.textMuted,
+    marginTop: 2,
+  },
+  slider: {
+    height: 40,
+    marginTop: Theme.spacing.sm,
+  },
+  scale: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 10,
-    paddingHorizontal: 5,
+    width: '100%',
+    paddingHorizontal: Theme.spacing.xs,
   },
-  tick: {
-    fontSize: 12,
-    textAlign: 'center',
-    width: 20,
+  scaleText: {
+    fontSize: Theme.fontSize.xs,
+    color: Theme.colors.textMuted,
   },
 });

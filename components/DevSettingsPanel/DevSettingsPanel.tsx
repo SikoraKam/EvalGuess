@@ -1,6 +1,7 @@
-import React, { FC } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { FC } from 'react';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import Slider from '@react-native-community/slider';
+import { Theme } from '@/const/theme';
 import { DevSettings } from '@/utils/devSettings';
 import { STARTING_RATING } from '@/utils/rating';
 import {
@@ -12,19 +13,25 @@ interface DevSettingsPanelProps {
   devSettings: DevSettings;
   onChange: (settings: DevSettings) => void;
   sessionRating: number;
+  onResetProgress: () => void;
+  width: number;
 }
+
+const QUICK_RATINGS = [700, 1000, 1300, 1600, 1900, 2200];
 
 export const DevSettingsPanel: FC<DevSettingsPanelProps> = ({
   devSettings,
   onChange,
   sessionRating,
+  onResetProgress,
+  width,
 }) => {
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { width }]}>
       <Text style={styles.title}>Test settings</Text>
       <Text style={styles.caption}>
-        Session rating: {sessionRating}. Override only affects position
-        selection, not earned points.
+        Session rating: {sessionRating}. The override only affects which
+        positions are served, not the rating you earn.
       </Text>
 
       <View style={styles.row}>
@@ -48,15 +55,18 @@ export const DevSettingsPanel: FC<DevSettingsPanelProps> = ({
         step={50}
         value={devSettings.ratingOverride}
         onValueChange={(ratingOverride) =>
-          onChange({ ...devSettings, ratingOverride: Math.round(ratingOverride) })
+          onChange({
+            ...devSettings,
+            ratingOverride: Math.round(ratingOverride),
+          })
         }
-        minimumTrackTintColor="#1976d2"
-        maximumTrackTintColor="#cccccc"
+        minimumTrackTintColor={Theme.colors.accent}
+        maximumTrackTintColor={Theme.colors.disabled}
       />
 
       <View style={styles.quickRow}>
-        {[800, 1000, 1200, 1500, 1800, 2100].map((rating) => (
-          <Text
+        {QUICK_RATINGS.map((rating) => (
+          <Pressable
             key={rating}
             style={[
               styles.quickButton,
@@ -70,13 +80,12 @@ export const DevSettingsPanel: FC<DevSettingsPanelProps> = ({
               })
             }
           >
-            {rating}
-          </Text>
+            <Text style={styles.quickButtonText}>{rating}</Text>
+          </Pressable>
         ))}
       </View>
 
-      <Text
-        style={styles.resetButton}
+      <Pressable
         onPress={() =>
           onChange({
             ratingOverrideEnabled: false,
@@ -84,69 +93,80 @@ export const DevSettingsPanel: FC<DevSettingsPanelProps> = ({
           })
         }
       >
-        Reset to session rating
-      </Text>
+        <Text style={styles.linkButton}>Reset to session rating</Text>
+      </Pressable>
+
+      <Pressable onPress={onResetProgress}>
+        <Text style={[styles.linkButton, styles.dangerButton]}>
+          Wipe saved progress
+        </Text>
+      </Pressable>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%',
-    maxWidth: 420,
-    marginTop: 24,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: '#f7f7f7',
+    marginTop: Theme.spacing.xl,
+    padding: Theme.spacing.lg,
+    borderRadius: Theme.radius.lg,
+    backgroundColor: Theme.colors.surface,
   },
   title: {
-    fontSize: 16,
+    fontSize: Theme.fontSize.lg,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: Theme.spacing.xs,
+    color: Theme.colors.text,
   },
   caption: {
-    fontSize: 13,
-    color: '#555',
-    marginBottom: 12,
+    fontSize: Theme.fontSize.sm,
+    color: Theme.colors.textMuted,
+    marginBottom: Theme.spacing.md,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: Theme.spacing.sm,
   },
   label: {
-    fontSize: 14,
+    fontSize: Theme.fontSize.md,
     flex: 1,
-    paddingRight: 12,
+    paddingRight: Theme.spacing.md,
+    color: Theme.colors.text,
   },
   valueLabel: {
-    fontSize: 14,
+    fontSize: Theme.fontSize.md,
     fontWeight: '600',
-    marginBottom: 4,
+    marginBottom: Theme.spacing.xs,
+    color: Theme.colors.text,
   },
   quickRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 12,
+    gap: Theme.spacing.sm,
+    marginTop: Theme.spacing.md,
   },
   quickButton: {
-    backgroundColor: '#e3f2fd',
-    color: '#1565c0',
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    fontWeight: '600',
+    backgroundColor: Theme.colors.accentSoft,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.radius.md,
   },
   quickButtonDisabled: {
     opacity: 0.45,
   },
-  resetButton: {
-    marginTop: 12,
-    color: '#1565c0',
+  quickButtonText: {
+    color: Theme.colors.accentText,
+    fontWeight: '600',
+  },
+  linkButton: {
+    marginTop: Theme.spacing.md,
+    color: Theme.colors.accentText,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  dangerButton: {
+    color: Theme.colors.negative,
   },
 });

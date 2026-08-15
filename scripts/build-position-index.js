@@ -1,145 +1,143 @@
 #!/usr/bin/env node
 
+/**
+ * Builds the binary index the app selects positions from.
+ *
+ * positions/generated/
+ *   manifest.json       file names + line counts
+ *   ratings.bin         Uint16 difficulty per position, in global id order
+ *   sorted-ids.bin      Uint32 global ids sorted by difficulty
+ *   sorted-ratings.bin  Uint16 difficulties, sorted (binary-searched at runtime)
+ *   offsets/<n>.bin     Uint32 (byteOffset, byteLength) pairs per line
+ */
+
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { rawDifficulty } = require('./positionDifficulty');
 
 const POSITIONS_DIR = path.join(__dirname, '../positions');
 const GENERATED_DIR = path.join(POSITIONS_DIR, 'generated');
 const OFFSETS_DIR = path.join(GENERATED_DIR, 'offsets');
 
-function clampPositionRating(rating) {
-  return Math.round(Math.max(600, Math.min(2400, rating)));
-}
-
-function estimatePositionRating(position) {
-  const { evals } = position;
-
-  if (!evals || evals.length === 0) {
-    return 1000;
-  }
-
-  const deepestEval = evals.reduce((best, current) =>
-    current.depth >= best.depth ? current : best,
-  );
-  const primaryPv = deepestEval.pvs[0];
-
-  let minCp = Number.POSITIVE_INFINITY;
-  let maxCp = Number.NEGATIVE_INFINITY;
-  let shortestMate = Number.POSITIVE_INFINITY;
-  let maxDepth = 0;
-  let maxKnodes = 0;
-  let totalPvs = 0;
-
-  for (const evalEntry of evals) {
-    maxDepth = Math.max(maxDepth, evalEntry.depth);
-    maxKnodes = Math.max(maxKnodes, evalEntry.knodes);
-
-    for (const pv of evalEntry.pvs) {
-      totalPvs += 1;
-
-      if (pv.mate !== undefined) {
-        shortestMate = Math.min(shortestMate, Math.abs(pv.mate));
-      }
-
-      if (pv.cp !== undefined) {
-        minCp = Math.min(minCp, pv.cp);
-        maxCp = Math.max(maxCp, pv.cp);
-      }
-    }
-  }
-
-  let rating = 1000;
-
-  if (Number.isFinite(minCp) && Number.isFinite(maxCp)) {
-    const spread = maxCp - minCp;
-    rating += Math.min(350, spread * 0.45);
-  }
-
-  if (evals.length > 1) {
-    rating += (evals.length - 1) * 18;
-  }
-
-  rating += Math.min(120, Math.max(0, totalPvs - 1) * 10);
-  rating += Math.min(180, Math.max(0, maxDepth - 24) * 3.5);
-
-  if (maxKnodes > 0) {
-    rating += Math.min(120, Math.log10(maxKnodes + 1) * 18);
-  }
-
-  if (Number.isFinite(shortestMate)) {
-    if (shortestMate <= 2) {
-      rating -= 280;
-    } else if (shortestMate <= 5) {
-      rating -= 120;
-    } else {
-      rating += Math.min(220, shortestMate * 7);
-    }
-  }
-
-  if (primaryPv?.cp !== undefined && Math.abs(primaryPv.cp) < 35) {
-    rating += 90;
-  }
-
-  if (
-    primaryPv?.cp !== undefined &&
-    Math.abs(primaryPv.cp) >= 500 &&
-    totalPvs === 1
-  ) {
-    rating -= 80;
-  }
-
-  return clampPositionRating(rating);
-}
+const MIN_POSITION_RATING = 600;
+const MAX_POSITION_RATING = 2400;
+const NEWLINE = 10;
+const CARRIAGE_RETURN = 13;
 
 async function listPartFiles() {
   const entries = await fs.readdir(POSITIONS_DIR);
+
   return entries
     .filter((entry) => entry.startsWith('part_'))
     .sort((left, right) => left.localeCompare(right));
 }
 
-async function processFile(fileName, fileIndex, ratings, globalIdStart) {
-  const filePath = path.join(POSITIONS_DIR, fileName);
-  const fileBuffer = await fs.readFile(filePath);
-  const offsets = new Uint32Array(10000);
-  let lineIndex = 0;
+/**
+ * Records byte offsets and lengths rather than reconstructing them from the
+ * decoded text, so multi-byte characters and CRLF line endings cannot shift
+ * the index.
+ */
+async function processFile(fileName, fileIndex, difficulties) {
+  const fileBuffer = await fs.readFile(path.join(POSITIONS_DIR, fileName));
+  const bounds = [];
   let lineStart = 0;
 
   for (let byteIndex = 0; byteIndex <= fileBuffer.length; byteIndex += 1) {
-    const isLineEnd =
-      byteIndex === fileBuffer.length || fileBuffer[byteIndex] === 10;
-
-    if (!isLineEnd) {
+    if (byteIndex !== fileBuffer.length && fileBuffer[byteIndex] !== NEWLINE) {
       continue;
     }
 
-    const line = fileBuffer
-      .subarray(lineStart, byteIndex)
-      .toString('utf8')
-      .trim();
+    let lineEnd = byteIndex;
+
+    if (lineEnd > lineStart && fileBuffer[lineEnd - 1] === CARRIAGE_RETURN) {
+      lineEnd -= 1;
+    }
+
+    if (lineEnd > lineStart) {
+      bounds.push(lineStart, lineEnd - lineStart);
+      const position = JSON.parse(
+        fileBuffer.toString('utf8', lineStart, lineEnd),
+      );
+      difficulties[bounds.length / 2 - 1] =
+        rawDifficulty(position) ?? Number.NaN;
+    }
 
     lineStart = byteIndex + 1;
-
-    if (!line) {
-      continue;
-    }
-
-    offsets[lineIndex] = lineStart - line.length - 1;
-    const position = JSON.parse(line);
-    ratings[globalIdStart + lineIndex] = estimatePositionRating(position);
-    lineIndex += 1;
-  }
-
-  if (lineIndex !== 10000) {
-    throw new Error(`${fileName} has ${lineIndex} lines, expected 10000.`);
   }
 
   await fs.writeFile(
     path.join(OFFSETS_DIR, `${fileIndex}.bin`),
-    Buffer.from(offsets.buffer),
+    Buffer.from(Uint32Array.from(bounds).buffer),
   );
 
-  return lineIndex;
+  return bounds.length / 2;
+}
+
+/**
+ * Maps raw difficulty onto the rating scale by rank, so the pool is spread
+ * evenly across it. The heuristic only orders positions sensibly; its absolute
+ * values are meaningless, and using them directly piled 83% of the dataset into
+ * a 400-point band while leaving the ends of the scale nearly empty.
+ *
+ * Ties are broken by global id: positions of genuinely equal difficulty end up
+ * a few rating points apart, which keeps every rating backed by a usable pool.
+ */
+function toRatingsByRank(difficulties) {
+  const total = difficulties.length;
+  const finite = [];
+
+  for (let globalId = 0; globalId < total; globalId += 1) {
+    if (Number.isFinite(difficulties[globalId])) {
+      finite.push(globalId);
+    }
+  }
+
+  const sortedIds = Uint32Array.from(finite).sort((left, right) => {
+    const difference = difficulties[left] - difficulties[right];
+
+    return difference !== 0 ? difference : left - right;
+  });
+
+  const ratings = new Uint16Array(total);
+  const span = MAX_POSITION_RATING - MIN_POSITION_RATING;
+  const lastRank = Math.max(1, sortedIds.length - 1);
+
+  for (let rank = 0; rank < sortedIds.length; rank += 1) {
+    ratings[sortedIds[rank]] = Math.round(
+      MIN_POSITION_RATING + (rank / lastRank) * span,
+    );
+  }
+
+  // Positions the model cannot score keep the middle of the scale.
+  const median = Math.round((MIN_POSITION_RATING + MAX_POSITION_RATING) / 2);
+
+  for (let globalId = 0; globalId < total; globalId += 1) {
+    if (!Number.isFinite(difficulties[globalId])) {
+      ratings[globalId] = median;
+    }
+  }
+
+  return { ratings, sortedIds };
+}
+
+function logDistribution(ratings) {
+  const histogram = new Map();
+
+  for (const rating of ratings) {
+    const bucket = Math.floor(rating / 200) * 200;
+    histogram.set(bucket, (histogram.get(bucket) ?? 0) + 1);
+  }
+
+  console.log('\nRating distribution (200-point buckets):');
+
+  for (const [bucket, count] of [...histogram.entries()].sort(
+    (left, right) => left[0] - right[0],
+  )) {
+    const share = ((100 * count) / ratings.length).toFixed(1);
+    console.log(
+      `  ${bucket}-${bucket + 199}: ${String(count).padStart(9)}  ${share}%`,
+    );
+  }
 }
 
 async function main() {
@@ -149,87 +147,69 @@ async function main() {
     throw new Error('No part_* files found in positions/.');
   }
 
-  await fs.mkdir(GENERATED_DIR, { recursive: true });
   await fs.mkdir(OFFSETS_DIR, { recursive: true });
 
-  const totalPositions = partFiles.length * 10000;
-  const ratings = new Uint16Array(totalPositions);
-  const counts = [];
+  console.log(`Indexing ${partFiles.length} files...`);
 
-  console.log(`Building index for ${partFiles.length} files...`);
+  const counts = [];
+  const chunks = [];
+  let total = 0;
 
   for (let fileIndex = 0; fileIndex < partFiles.length; fileIndex += 1) {
-    const fileName = partFiles[fileIndex];
-    const globalIdStart = fileIndex * 10000;
+    const difficulties = new Float64Array(20000);
     const lineCount = await processFile(
-      fileName,
+      partFiles[fileIndex],
       fileIndex,
-      ratings,
-      globalIdStart,
+      difficulties,
     );
+
     counts.push(lineCount);
+    chunks.push(difficulties.subarray(0, lineCount));
+    total += lineCount;
 
-    if ((fileIndex + 1) % 10 === 0 || fileIndex === partFiles.length - 1) {
-      console.log(`Processed ${fileIndex + 1}/${partFiles.length} files`);
+    if ((fileIndex + 1) % 20 === 0 || fileIndex === partFiles.length - 1) {
+      console.log(`  ${fileIndex + 1}/${partFiles.length} files`);
     }
   }
 
-  const sortedEntries = Array.from({ length: totalPositions }, (_, globalId) => ({
-    globalId,
-    rating: ratings[globalId],
-  })).sort((left, right) => {
-    if (left.rating !== right.rating) {
-      return left.rating - right.rating;
-    }
+  const difficulties = new Float64Array(total);
+  let cursor = 0;
 
-    return left.globalId - right.globalId;
-  });
-
-  const sortedIds = new Uint32Array(totalPositions);
-  const sortedRatings = new Uint16Array(totalPositions);
-
-  for (let index = 0; index < sortedEntries.length; index += 1) {
-    sortedIds[index] = sortedEntries[index].globalId;
-    sortedRatings[index] = sortedEntries[index].rating;
+  for (const chunk of chunks) {
+    difficulties.set(chunk, cursor);
+    cursor += chunk.length;
   }
 
-  const manifest = {
-    files: partFiles,
-    counts,
-    totalPositions,
-  };
+  const { ratings, sortedIds } = toRatingsByRank(difficulties);
+  const sortedRatings = new Uint16Array(sortedIds.length);
 
-  await fs.writeFile(
-    path.join(GENERATED_DIR, 'manifest.json'),
-    JSON.stringify(manifest),
-  );
-  await fs.writeFile(
-    path.join(GENERATED_DIR, 'ratings.bin'),
-    Buffer.from(ratings.buffer),
-  );
-  await fs.writeFile(
-    path.join(GENERATED_DIR, 'sorted-ids.bin'),
-    Buffer.from(sortedIds.buffer),
-  );
-  await fs.writeFile(
-    path.join(GENERATED_DIR, 'sorted-ratings.bin'),
-    Buffer.from(sortedRatings.buffer),
-  );
-
-  const histogram = new Map();
-  for (const entry of sortedEntries) {
-    const bucket = Math.floor(entry.rating / 100) * 100;
-    histogram.set(bucket, (histogram.get(bucket) ?? 0) + 1);
+  for (let rank = 0; rank < sortedIds.length; rank += 1) {
+    sortedRatings[rank] = ratings[sortedIds[rank]];
   }
 
-  console.log('Rating distribution (100-point buckets):');
-  for (const [bucket, count] of [...histogram.entries()].sort(
-    (left, right) => left[0] - right[0],
-  )) {
-    console.log(`${bucket}-${bucket + 99}: ${count}`);
-  }
+  const manifest = { files: partFiles, counts, totalPositions: total };
 
-  console.log(`Done. Indexed ${totalPositions.toLocaleString()} positions.`);
+  await Promise.all([
+    fs.writeFile(
+      path.join(GENERATED_DIR, 'manifest.json'),
+      JSON.stringify(manifest),
+    ),
+    fs.writeFile(
+      path.join(GENERATED_DIR, 'ratings.bin'),
+      Buffer.from(ratings.buffer),
+    ),
+    fs.writeFile(
+      path.join(GENERATED_DIR, 'sorted-ids.bin'),
+      Buffer.from(sortedIds.buffer),
+    ),
+    fs.writeFile(
+      path.join(GENERATED_DIR, 'sorted-ratings.bin'),
+      Buffer.from(sortedRatings.buffer),
+    ),
+  ]);
+
+  logDistribution(ratings);
+  console.log(`\nDone. Indexed ${total.toLocaleString()} positions.`);
 }
 
 main().catch((error) => {

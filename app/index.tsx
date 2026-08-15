@@ -1,63 +1,91 @@
-import { Board, EvaluationSlider, ResultCue } from '@/components';
-import { StandardButton } from '@/components/common';
-import { EvaluationResultModal } from '@/components/EvaluationResultModal';
-import { CategoryLabels } from '@/const/categories';
-import { getCategoryDifference } from '@/utils/categories';
-import { getEngineCategory } from '@/utils/evaluation';
 import {
-  GameSession,
-  PositionIndex,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
+import {
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  Board,
+  BoardHeader,
+  DevSettingsPanel,
+  EvaluationResultModal,
+  EvaluationSlider,
+  LineReview,
+  ResultCue,
+  StatsBar,
+  StatusScreen,
+} from '@/components';
+import { StandardButton } from '@/components/common';
+import { Theme } from '@/const/theme';
+import {
+  gameReducer,
+  getGuessOutcome,
+  INITIAL_GAME_STATE,
+} from '@/utils/gameMachine';
+import {
   createInitialGameSession,
   getNextGameSession,
+  GameSession,
 } from '@/utils/gameSession';
 import {
+  clearGameSession,
   loadGameSession,
   saveGameSession,
-  migrateLegacyRating,
 } from '@/utils/gameStorage';
-import { calculateRatingChange, STARTING_RATING } from '@/utils/rating';
 import {
-  loadPositionIndex,
-  loadPositionByRef,
-} from '@/utils/positionService';
-import { Position } from '@/positions/types';
-import {
-  DevSettings,
   DEFAULT_DEV_SETTINGS,
+  DevSettings,
   getEffectiveRating,
 } from '@/utils/devSettings';
+import { loadDevSettings, saveDevSettings } from '@/utils/devSettingsStorage';
+import { getSideToMove } from '@/utils/fen';
+import { buildLineReplay } from '@/utils/lineReplay';
 import {
-  loadDevSettings,
-  saveDevSettings,
-} from '@/utils/devSettingsStorage';
-import { DevSettingsPanel } from '@/components/DevSettingsPanel/DevSettingsPanel';
-import { useCallback, useEffect, useState } from 'react';
-import { Text, View, ScrollView, ActivityIndicator } from 'react-native';
+  loadPositionByRef,
+  loadPositionIndex,
+  prefetchPosition,
+} from '@/utils/positionService';
+import { STARTING_RATING } from '@/utils/rating';
+
+const MAX_BOARD_SIZE = 420;
 
 export default function Index() {
-  const [positionIndex, setPositionIndex] = useState<PositionIndex | null>(null);
-  const [session, setSession] = useState<GameSession | null>(null);
-  const [currentPosition, setCurrentPosition] = useState<Position | null>(null);
-  const [devSettings, setDevSettings] = useState<DevSettings>(DEFAULT_DEV_SETTINGS);
+  const [state, dispatch] = useReducer(gameReducer, INITIAL_GAME_STATE);
+  const [devSettings, setDevSettings] =
+    useState<DevSettings>(DEFAULT_DEV_SETTINGS);
+  const [flipped, setFlipped] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
-  const [selectedValueOnSlider, setSelectedValueOnSlider] = useState(0);
-  const [isResultModalVisible, setIsResultModalVisible] = useState(false);
-  const [isResultCueVisible, setIsResultCueVisible] = useState(false);
-  const [isAnswerSubmitted, setIsAnswerSubmitted] = useState(false);
-  const [isDataLoaded, setIsDataLoaded] = useState(false);
+  /** Selected while the player reads the result, so "Next" feels instant. */
+  const pendingSession = useRef<GameSession | null>(null);
 
-  // Initialize and load saved state on mount
+  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const contentWidth = Math.min(width - Theme.spacing.lg * 2, MAX_BOARD_SIZE);
+
+  const { phase, session, position, index, guess, reviewStep } = state;
+
   useEffect(() => {
-    let isMounted = true;
+    let isActive = true;
 
     async function initialize() {
       try {
-        const loadedIndex = await loadPositionIndex();
-        const loadedDevSettings = await loadDevSettings();
+        const [loadedIndex, loadedDevSettings] = await Promise.all([
+          loadPositionIndex(),
+          loadDevSettings(),
+        ]);
 
-        if (!isMounted) return;
+        if (!isActive) return;
 
-        setPositionIndex(loadedIndex);
         setDevSettings(loadedDevSettings);
 
         const savedSession = await loadGameSession(
@@ -65,200 +93,320 @@ export default function Index() {
           (fileIndex) => loadedIndex.manifest.counts[fileIndex],
         );
 
-        if (!isMounted) return;
+        if (!isActive) return;
 
-        if (savedSession) {
-          const migratedRating = migrateLegacyRating(savedSession.rating);
-          setSession({
-            ...savedSession,
-            rating: migratedRating,
-          });
-        } else {
-          const selectionRating = getEffectiveRating(STARTING_RATING, loadedDevSettings);
-          const newSession = createInitialGameSession(loadedIndex, selectionRating);
-          setSession(newSession);
-        }
+        dispatch({
+          type: 'initialized',
+          index: loadedIndex,
+          session:
+            savedSession ??
+            createInitialGameSession(
+              loadedIndex,
+              getEffectiveRating(STARTING_RATING, loadedDevSettings),
+            ),
+        });
       } catch (error) {
-        console.error('Failed to initialize application:', error);
-      } finally {
-        if (isMounted) {
-          setIsDataLoaded(true);
-        }
+        if (!isActive) return;
+
+        dispatch({
+          type: 'failed',
+          message:
+            error instanceof Error ? error.message : 'Unknown error occurred.',
+        });
       }
     }
 
     void initialize();
 
     return () => {
-      isMounted = false;
+      isActive = false;
     };
-  }, []);
+  }, [reloadToken]);
 
-  // Save session when it changes
+  const currentRef = session?.currentPositionRef;
+
   useEffect(() => {
-    if (isDataLoaded && session) {
-      void saveGameSession(session);
-    }
-  }, [isDataLoaded, session]);
-
-  // Save dev settings when they change
-  const handleDevSettingsChange = useCallback(async (newSettings: DevSettings) => {
-    setDevSettings(newSettings);
-    await saveDevSettings(newSettings);
-  }, []);
-
-  // Load current position when session reference changes
-  useEffect(() => {
-    if (!session?.currentPositionRef) {
+    if (!currentRef) {
       return;
     }
 
-    let isMounted = true;
+    let isActive = true;
 
-    async function fetchPosition() {
-      try {
-        const pos = await loadPositionByRef(session.currentPositionRef);
-        if (isMounted) {
-          setCurrentPosition(pos);
+    loadPositionByRef(currentRef)
+      .then((loaded) => {
+        if (isActive) {
+          dispatch({
+            type: 'positionLoaded',
+            position: loaded,
+            ref: currentRef,
+          });
         }
-      } catch (error) {
-        console.error('Failed to load current position:', error);
-      }
-    }
-
-    void fetchPosition();
+      })
+      .catch((error: unknown) => {
+        if (isActive) {
+          dispatch({
+            type: 'failed',
+            message:
+              error instanceof Error
+                ? error.message
+                : 'Could not load the position.',
+          });
+        }
+      });
 
     return () => {
-      isMounted = false;
+      isActive = false;
     };
-  }, [session?.currentPositionRef]);
+  }, [currentRef]);
 
-  const showResultModal = useCallback(() => {
-    setIsResultCueVisible(false);
-    setIsResultModalVisible(true);
+  useEffect(() => {
+    if (session && phase !== 'loading' && phase !== 'error') {
+      void saveGameSession(session);
+    }
+  }, [phase, session]);
+
+  const outcome = useMemo(
+    () =>
+      session
+        ? getGuessOutcome(
+            position,
+            guess,
+            session.rating,
+            session.currentPositionRating,
+          )
+        : null,
+    [guess, position, session],
+  );
+
+  // Choosing the next position up front lets it download during the animation.
+  useEffect(() => {
+    if (phase !== 'cue' || !session || !index || !outcome) {
+      return;
+    }
+
+    const next = getNextGameSession(
+      session,
+      index,
+      outcome.ratingChange,
+      outcome.isExact,
+      getEffectiveRating(session.rating + outcome.ratingChange, devSettings),
+    );
+
+    pendingSession.current = next;
+    prefetchPosition(next.currentPositionRef);
+  }, [devSettings, index, outcome, phase, session]);
+
+  const handleDevSettingsChange = useCallback((newSettings: DevSettings) => {
+    setDevSettings(newSettings);
+    pendingSession.current = null;
+    void saveDevSettings(newSettings);
   }, []);
 
-  const goToNextPosition = () => {
-    if (!session || !positionIndex) return;
+  const handleCueFinished = useCallback(() => {
+    dispatch({ type: 'cueFinished' });
+  }, []);
 
-    const engineEvaluation = currentPosition?.evals[0]?.pvs[0];
-    const engineCategory = getEngineCategory(engineEvaluation);
-    const userEvalCategory =
-      CategoryLabels[
-        `${selectedValueOnSlider}Category` as keyof typeof CategoryLabels
-      ];
-    const categoryDifference = getCategoryDifference(
-      userEvalCategory,
-      engineCategory,
-    );
+  const handleNext = useCallback(() => {
+    if (!session || !index || !outcome) {
+      return;
+    }
 
-    const ratingChange = calculateRatingChange(
-      session.rating,
-      session.currentPositionRating,
-      categoryDifference,
-    );
-
-    const nextRating = session.rating + ratingChange;
-    const selectionRating = getEffectiveRating(nextRating, devSettings);
-
-    setSession((currentSession) => {
-      if (!currentSession) return null;
-      return getNextGameSession(
-        currentSession,
-        positionIndex,
-        ratingChange,
-        categoryDifference === 0,
-        selectionRating,
+    const next =
+      pendingSession.current ??
+      getNextGameSession(
+        session,
+        index,
+        outcome.ratingChange,
+        outcome.isExact,
+        getEffectiveRating(session.rating + outcome.ratingChange, devSettings),
       );
-    });
 
-    setSelectedValueOnSlider(0);
-    setIsResultModalVisible(false);
-    setIsAnswerSubmitted(false);
-  };
+    pendingSession.current = null;
+    dispatch({ type: 'advanced', session: next });
+  }, [devSettings, index, outcome, session]);
 
-  if (!isDataLoaded || !session || !currentPosition || !positionIndex) {
+  const handleResetProgress = useCallback(async () => {
+    await clearGameSession();
+    setReloadToken((token) => token + 1);
+    dispatch({ type: 'retrying' });
+  }, []);
+
+  const replay = useMemo(
+    () =>
+      position
+        ? buildLineReplay(position.fen, outcome?.engineEvaluation?.line ?? '')
+        : null,
+    [outcome?.engineEvaluation?.line, position],
+  );
+
+  if (phase === 'loading') {
+    return <StatusScreen message="Loading game data…" />;
+  }
+
+  if (phase === 'error') {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color="#1976d2" />
-        <Text style={{ marginTop: 12 }}>Loading game data…</Text>
-      </View>
+      <StatusScreen
+        message="Could not load the position data"
+        detail={state.errorMessage ?? undefined}
+        onRetry={() => {
+          dispatch({ type: 'retrying' });
+          setReloadToken((token) => token + 1);
+        }}
+      />
     );
   }
 
-  const engineEvaluation = currentPosition.evals[0]?.pvs[0];
-  const engineCategory = getEngineCategory(engineEvaluation);
-  const userEvalCategory =
-    CategoryLabels[
-      `${selectedValueOnSlider}Category` as keyof typeof CategoryLabels
-    ];
-  const categoryDifference = getCategoryDifference(
-    userEvalCategory,
-    engineCategory,
-  );
+  if (!session) {
+    return <StatusScreen message="Loading game data…" />;
+  }
 
-  const ratingChange = calculateRatingChange(
-    session.rating,
-    session.currentPositionRating,
-    categoryDifference,
-  );
+  const isReviewing = phase === 'review';
+  const reviewFen =
+    isReviewing && replay && reviewStep >= 0
+      ? replay.steps[reviewStep].fen
+      : position?.fen;
+  const activeFen = reviewFen ?? position?.fen;
+  const lastMove =
+    isReviewing && replay && reviewStep >= 0
+      ? [replay.steps[reviewStep].from, replay.steps[reviewStep].to]
+      : undefined;
 
   return (
     <ScrollView
-      style={{ flex: 1 }}
-      contentContainerStyle={{
-        alignItems: 'center',
-        paddingVertical: 20,
-        paddingHorizontal: 16,
-      }}
+      style={styles.screen}
+      contentContainerStyle={[
+        styles.content,
+        { paddingBottom: insets.bottom + Theme.spacing.xl },
+      ]}
     >
-      <Board fen={currentPosition.fen} />
-
-      <Text style={{ marginTop: 20 }}>
-        Rating: {session.rating} · Positions: {session.completedPositions} ·
-        Exact guesses: {session.correctGuesses}
-      </Text>
-
-      <View style={{ marginTop: 40, width: '100%', alignItems: 'center' }}>
-        <EvaluationSlider
-          setValue={setSelectedValueOnSlider}
-          value={selectedValueOnSlider}
+      {activeFen ? (
+        <>
+          <BoardHeader
+            sideToMove={getSideToMove(activeFen)}
+            onToggleFlip={() => setFlipped((current) => !current)}
+            width={contentWidth}
+          />
+          <Board
+            fen={activeFen}
+            size={contentWidth}
+            flipped={flipped}
+            highlightedSquares={lastMove}
+          />
+        </>
+      ) : (
+        <View
+          style={[
+            styles.boardPlaceholder,
+            { width: contentWidth, height: contentWidth },
+          ]}
         />
+      )}
 
-        <StandardButton
-          style={{ marginTop: 30, width: '100%', maxWidth: 300 }}
-          disabled={isAnswerSubmitted}
-          onPress={() => {
-            setIsAnswerSubmitted(true);
-            setIsResultCueVisible(true);
-          }}
-        >
-          Evaluate
-        </StandardButton>
-      </View>
-
-      <EvaluationResultModal
-        engineCategory={engineCategory}
-        engineEvaluation={engineEvaluation}
-        onNext={goToNextPosition}
-        ratingChange={ratingChange}
-        userEvalCategory={userEvalCategory}
-        visible={isResultModalVisible}
-        playerRating={session.rating}
+      <StatsBar
+        rating={session.rating}
+        completedPositions={session.completedPositions}
+        correctGuesses={session.correctGuesses}
         positionRating={session.currentPositionRating}
+        width={contentWidth}
       />
 
-      <ResultCue
-        onComplete={showResultModal}
-        ratingChange={ratingChange}
-        visible={isResultCueVisible}
-      />
+      {isReviewing && replay ? (
+        <>
+          <LineReview
+            replay={replay}
+            stepIndex={reviewStep}
+            onStepChange={(step) =>
+              dispatch({ type: 'reviewStepChanged', step })
+            }
+            startsWithBlack={
+              position ? getSideToMove(position.fen) === 'b' : false
+            }
+            width={contentWidth}
+          />
 
-      <DevSettingsPanel
-        devSettings={devSettings}
-        onChange={handleDevSettingsChange}
-        sessionRating={session.rating}
-      />
+          <StandardButton
+            style={[styles.action, { width: contentWidth }]}
+            onPress={handleNext}
+          >
+            Next position
+          </StandardButton>
+        </>
+      ) : (
+        <View style={styles.guessArea}>
+          <EvaluationSlider
+            value={guess}
+            setValue={(value) =>
+              dispatch({ type: 'guessChanged', guess: value })
+            }
+            width={contentWidth}
+            disabled={phase !== 'guessing'}
+          />
+
+          <StandardButton
+            style={[styles.action, { width: contentWidth }]}
+            disabled={phase !== 'guessing' || !position}
+            onPress={() => dispatch({ type: 'submitted' })}
+          >
+            Evaluate
+          </StandardButton>
+        </View>
+      )}
+
+      {outcome && (
+        <>
+          <ResultCue
+            onComplete={handleCueFinished}
+            ratingChange={outcome.ratingChange}
+            visible={phase === 'cue'}
+          />
+
+          <EvaluationResultModal
+            engineCategory={outcome.engineCategory}
+            engineEvaluation={outcome.engineEvaluation}
+            userCategory={guess}
+            ratingChange={outcome.ratingChange}
+            playerRating={session.rating}
+            positionRating={session.currentPositionRating}
+            visible={phase === 'result'}
+            canReview={(replay?.steps.length ?? 0) > 0}
+            onReview={() => dispatch({ type: 'reviewOpened' })}
+            onNext={handleNext}
+          />
+        </>
+      )}
+
+      {__DEV__ && (
+        <DevSettingsPanel
+          devSettings={devSettings}
+          onChange={handleDevSettingsChange}
+          sessionRating={session.rating}
+          onResetProgress={handleResetProgress}
+          width={contentWidth}
+        />
+      )}
     </ScrollView>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: Theme.colors.background,
+  },
+  content: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  boardPlaceholder: {
+    borderRadius: Theme.radius.md,
+    backgroundColor: Theme.colors.surface,
+  },
+  guessArea: {
+    marginTop: Theme.spacing.xl,
+    alignItems: 'center',
+  },
+  action: {
+    marginTop: Theme.spacing.lg,
+  },
+});

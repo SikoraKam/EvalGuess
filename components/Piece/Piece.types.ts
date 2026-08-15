@@ -1,7 +1,8 @@
 import { Player, Type } from '@/main.types';
 
-export interface PieceProps {
-  name: Piece;
-}
+export type PieceName = `${Player}${Type}`;
 
-type Piece = `${Player}${Type}`;
+export interface PieceProps {
+  name: PieceName;
+  size: number;
+}
