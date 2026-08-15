@@ -33,16 +33,20 @@ describe('formatEngineEvaluation', () => {
 
 describe('rating', () => {
   it.each([
-    [0, 12],
-    [1, 7],
-    [2, 2],
-    [3, -2],
-    [5, -12],
-    [10, -36],
+    // [playerRating, positionRating, categoryDifference, expectedChange]
+    [1000, 1000, 0, 16],
+    [1000, 1000, 1, 8],
+    [1000, 1000, 2, 0],
+    [1000, 1000, 3, -8],
+    [1000, 1000, 4, -16],
+    [1000, 1200, 0, 24],
+    [1000, 1200, 4, -8],
   ])(
-    'changes rating by %i for a %i-category difference',
-    (difference, change) => {
-      expect(calculateRatingChange(difference)).toBe(change);
+    'changes rating for player %i vs position %i with category difference %i by %i',
+    (playerRating, positionRating, difference, expectedChange) => {
+      expect(
+        calculateRatingChange(playerRating, positionRating, difference),
+      ).toBe(expectedChange);
     },
   );
 

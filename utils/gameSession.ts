@@ -1,75 +1,103 @@
+import {
+  Position,
+  PositionRef,
+  positionRefKey,
+} from '@/positions/types';
+import {
+  createPositionIndex,
+  loadPositionFromJsonLine,
+  PositionIndex,
+  selectPositionFromIndex,
+  SelectedPosition,
+  trackRecentPositionKey,
+} from '@/utils/positionSelection';
+import { STARTING_RATING } from '@/utils/rating';
+
 export interface GameSession {
+  rating: number;
   completedPositions: number;
   correctGuesses: number;
-  currentPositionIndex: number;
-  rating: number;
-  remainingPositionIndexes: number[];
+  currentPositionRef: PositionRef;
+  currentPositionRating: number;
+  recentPositionKeys: string[];
 }
 
 type Random = () => number;
 
-export function createGameSession(
-  positionCount: number,
+export function createInitialGameSession(
+  index: PositionIndex,
+  selectionRating = STARTING_RATING,
   random: Random = Math.random,
 ): GameSession {
-  if (positionCount < 1) {
-    throw new Error('At least one position is required to start a game.');
-  }
+  const selected = selectPositionFromIndex(
+    index,
+    selectionRating,
+    [],
+    random,
+  );
 
-  const shuffledIndexes = shuffleIndexes(positionCount, random);
+  return createGameSessionFromSelection(selected, STARTING_RATING);
+}
+
+export function createGameSessionFromSelection(
+  selected: SelectedPosition,
+  rating = STARTING_RATING,
+): GameSession {
+  const key = positionRefKey(selected.ref);
 
   return {
+    rating,
     completedPositions: 0,
     correctGuesses: 0,
-    currentPositionIndex: shuffledIndexes[0],
-    remainingPositionIndexes: shuffledIndexes.slice(1),
-    rating: 0,
+    currentPositionRef: selected.ref,
+    currentPositionRating: selected.rating,
+    recentPositionKeys: [key],
   };
 }
 
 export function getNextGameSession(
   session: GameSession,
-  positionCount: number,
+  index: PositionIndex,
   ratingChange: number,
   isExactGuess: boolean,
+  selectionRating: number,
   random: Random = Math.random,
 ): GameSession {
-  const updatedStats = {
-    completedPositions: session.completedPositions + 1,
-    correctGuesses: session.correctGuesses + (isExactGuess ? 1 : 0),
-    rating: session.rating + ratingChange,
-  };
-
-  if (session.remainingPositionIndexes.length > 0) {
-    const [currentPositionIndex, ...remainingPositionIndexes] =
-      session.remainingPositionIndexes;
-
-    return {
-      ...updatedStats,
-      currentPositionIndex,
-      remainingPositionIndexes,
-    };
-  }
-
-  const nextDeck = shuffleIndexes(positionCount, random);
+  const nextRating = session.rating + ratingChange;
+  const selected = selectPositionFromIndex(
+    index,
+    selectionRating,
+    session.recentPositionKeys,
+    random,
+  );
 
   return {
-    ...updatedStats,
-    currentPositionIndex: nextDeck[0],
-    remainingPositionIndexes: nextDeck.slice(1),
+    rating: nextRating,
+    completedPositions: session.completedPositions + 1,
+    correctGuesses: session.correctGuesses + (isExactGuess ? 1 : 0),
+    currentPositionRef: selected.ref,
+    currentPositionRating: selected.rating,
+    recentPositionKeys: trackRecentPositionKey(
+      session.recentPositionKeys,
+      positionRefKey(selected.ref),
+    ),
   };
 }
 
-function shuffleIndexes(positionCount: number, random: Random): number[] {
-  const indexes = Array.from({ length: positionCount }, (_, index) => index);
-
-  for (let index = indexes.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(random() * (index + 1));
-    [indexes[index], indexes[randomIndex]] = [
-      indexes[randomIndex],
-      indexes[index],
-    ];
+export function isValidPositionRef(
+  ref: PositionRef,
+  fileCount: number,
+  lineCountForFile: (fileIndex: number) => number,
+): boolean {
+  if (!Number.isInteger(ref.fileIndex) || !Number.isInteger(ref.lineIndex)) {
+    return false;
   }
 
-  return indexes;
+  if (ref.fileIndex < 0 || ref.fileIndex >= fileCount) {
+    return false;
+  }
+
+  return ref.lineIndex >= 0 && ref.lineIndex < lineCountForFile(ref.fileIndex);
 }
+
+export { createPositionIndex, loadPositionFromJsonLine, PositionIndex };

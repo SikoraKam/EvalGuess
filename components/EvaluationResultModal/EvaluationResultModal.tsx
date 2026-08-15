@@ -23,6 +23,8 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
   ratingChange,
   userEvalCategory,
   visible,
+  playerRating,
+  positionRating,
 }) => {
   const [detailsVisible, setDetailsVisible] = useState(false);
   const [detailsProgress] = useState(() => new Animated.Value(0));
@@ -115,16 +117,16 @@ export const EvaluationResultModal: FC<EvaluationResultModalProps> = ({
           >
             <Text style={styles.detailsText}>Rating rules:</Text>
             <Text style={styles.detailsText}>
-              Exact category: {formatRatingChange(calculateRatingChange(0))}
+              Exact category: {formatRatingChange(calculateRatingChange(playerRating, positionRating, 0))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 1: {formatRatingChange(calculateRatingChange(1))}
+              Difference of 1: {formatRatingChange(calculateRatingChange(playerRating, positionRating, 1))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 2: {formatRatingChange(calculateRatingChange(2))}
+              Difference of 2: {formatRatingChange(calculateRatingChange(playerRating, positionRating, 2))}
             </Text>
             <Text style={styles.detailsText}>
-              Difference of 3: {formatRatingChange(calculateRatingChange(3))}
+              Difference of 3: {formatRatingChange(calculateRatingChange(playerRating, positionRating, 3))}
             </Text>
             <Text style={styles.detailsText}>
               Each further category lowers rating further.

@@ -8,4 +8,6 @@ export interface EvaluationResultModalProps {
   engineEvaluation: EngineEvaluation | undefined;
   userEvalCategory: CategoryLabels;
   ratingChange: number;
+  playerRating: number;
+  positionRating: number;
 }

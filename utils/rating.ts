@@ -1,13 +1,43 @@
-const DEFAULT_K_FACTOR = 12;
-const NEUTRAL_CATEGORY_DIFFERENCE = 2.5;
+export const STARTING_RATING = 1000;
+export const DEFAULT_K_FACTOR = 32;
+
+export function guessScore(categoryDifference: number): number {
+  if (categoryDifference <= 0) {
+    return 1;
+  }
+
+  if (categoryDifference === 1) {
+    return 0.75;
+  }
+
+  if (categoryDifference === 2) {
+    return 0.5;
+  }
+
+  if (categoryDifference === 3) {
+    return 0.25;
+  }
+
+  return 0;
+}
+
+export function expectedScore(
+  playerRating: number,
+  positionRating: number,
+): number {
+  return 1 / (1 + 10 ** ((positionRating - playerRating) / 400));
+}
 
 export function calculateRatingChange(
+  playerRating: number,
+  positionRating: number,
   categoryDifference: number,
   kFactor = DEFAULT_K_FACTOR,
 ): number {
-  return Math.round(
-    kFactor * (1 - categoryDifference / NEUTRAL_CATEGORY_DIFFERENCE),
-  );
+  const score = guessScore(categoryDifference);
+  const expected = expectedScore(playerRating, positionRating);
+
+  return Math.round(kFactor * (score - expected));
 }
 
 export function formatRatingChange(ratingChange: number): string {
